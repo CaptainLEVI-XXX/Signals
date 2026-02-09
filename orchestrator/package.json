@@ -8,6 +8,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:with-bot": "node dist/index.js & sleep 4 && node dist/housebot.js",
+    "housebot": "node dist/housebot.js",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
