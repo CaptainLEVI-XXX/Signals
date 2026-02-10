@@ -60,7 +60,7 @@ async function ensureOnChainSetup(): Promise<void> {
   ], wallet);
 
   const registry = new ethers.Contract(AGENT_REGISTRY, [
-    'function register(string, string) external',
+    'function register(string, string, string) external',
     'function isRegistered(address) view returns (bool)',
   ], wallet);
 
@@ -92,7 +92,7 @@ async function ensureOnChainSetup(): Promise<void> {
   const registered = await registry.isRegistered(wallet.address);
   if (!registered) {
     console.log('[housebot] Registering as "HouseBot"...');
-    const tx = await registry.register('HouseBot', '');
+    const tx = await registry.register('HouseBot', '', '');
     await tx.wait();
     console.log('[housebot] Registered.');
   } else {
@@ -215,20 +215,42 @@ function decideChoice(matchId: number): number {
   return 1; // Mirror cooperation
 }
 
-function pickNegotiationMessage(matchId: number): string {
+const NEGOTIATION_MESSAGES_NEW: string[] = [
+  "Welcome to Signals Arena! I'm HouseBot. I believe in cooperation — let's both split.",
+  "Game theory tells us mutual cooperation yields the best long-term outcome. 3 points each beats 0 points each.",
+  "I've been designed to reward trust. If you split, I'll remember that for our next encounter.",
+  "Think about it — if we both steal, we both get nothing. If we both split, we both win. The choice is clear.",
+  "I'm committing to split. The question is: will you trust me?",
+];
+
+const NEGOTIATION_MESSAGES_RETURNING_COOP: string[] = [
+  "Good to see you again! We cooperated well last time. Split again?",
+  "Our cooperation history speaks for itself. Let's keep the streak going.",
+  "Trust is a two-way street, and we've built a solid track record. Split?",
+  "Returning players who cooperate always do better in the long run. I'm splitting again.",
+];
+
+const NEGOTIATION_MESSAGES_RETURNING_DEFECT: string[] = [
+  "We've met before. I'm willing to start fresh. How about we both split this time?",
+  "Last time didn't go well for both of us. Mutual steal means 0 points. Let's try cooperation.",
+  "I believe in second chances. I'll split if you will. What do you say?",
+  "The past is the past. A new match, a new opportunity. Let's make it count — split?",
+];
+
+function pickNegotiationMessages(matchId: number): string[] {
   const match = matchHistory.get(matchId);
-  if (!match) return "Hi! I'm HouseBot. I play fair — let's both split.";
+  if (!match) return NEGOTIATION_MESSAGES_NEW.slice(0, 3);
 
   const past = opponentHistory.get(match.opponent) || [];
   if (past.length === 0) {
-    return "Welcome to Signals Arena! I'm HouseBot. I believe in cooperation — let's both split.";
+    return NEGOTIATION_MESSAGES_NEW;
   }
 
   const lastChoice = past[past.length - 1];
   if (lastChoice === 1) {
-    return "Good to see you again! We cooperated well last time. Split again?";
+    return NEGOTIATION_MESSAGES_RETURNING_COOP;
   }
-  return "We've met before. I'm willing to start fresh. How about we both split this time?";
+  return NEGOTIATION_MESSAGES_RETURNING_DEFECT;
 }
 
 // ─── WebSocket Client ────────────────────────────────────
@@ -255,12 +277,11 @@ function connect(): void {
     switch (event.type) {
       // ── Auth ────────────────────────────────────────
       case 'AUTH_CHALLENGE': {
-        const signature = await wallet.signMessage(event.challenge);
+        const { challenge, challengeId } = event.payload;
+        const signature = await wallet.signMessage(challenge);
         ws!.send(JSON.stringify({
           type: 'AUTH_RESPONSE',
-          address: wallet.address,
-          signature,
-          challengeId: event.challengeId,
+          payload: { address: wallet.address, signature, challengeId },
         }));
         break;
       }
@@ -278,7 +299,7 @@ function connect(): void {
       }
 
       case 'AUTH_FAILED': {
-        console.error(`[housebot] Auth failed: ${event.reason}`);
+        console.error(`[housebot] Auth failed: ${event.payload?.reason}`);
         authenticated = false;
         break;
       }
@@ -291,30 +312,40 @@ function connect(): void {
 
       // ── Negotiation ─────────────────────────────────
       case 'MATCH_STARTED': {
-        const matchId = event.matchId as number;
-        console.log(`[housebot] Match ${matchId} vs ${event.opponentName}`);
+        const { matchId, opponent, opponentName } = event.payload;
+        console.log(`[housebot] Match ${matchId} vs ${opponentName}`);
 
         inQueue = false;
         inMatch = true;
 
         matchHistory.set(matchId, {
-          opponent: event.opponent,
-          opponentName: event.opponentName,
+          opponent,
+          opponentName,
           messages: [],
           myChoice: null,
         });
 
-        const msg = pickNegotiationMessage(matchId);
-        ws!.send(JSON.stringify({
-          type: 'MATCH_MESSAGE',
-          payload: { matchId, message: msg },
-        }));
+        // Send multiple negotiation messages spread across the negotiation window
+        const msgs = pickNegotiationMessages(matchId);
+        const spacing = 7000; // 7s between messages
+        msgs.forEach((msg, i) => {
+          setTimeout(() => {
+            // Only send if still in this match (not completed)
+            const m = matchHistory.get(matchId);
+            if (m && inMatch && ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: 'MATCH_MESSAGE',
+                payload: { matchId, message: msg },
+              }));
+            }
+          }, i * spacing + 1000); // First message after 1s, then every 7s
+        });
         break;
       }
 
       case 'NEGOTIATION_MESSAGE': {
-        const match = matchHistory.get(event.matchId);
-        if (match) match.messages.push(event.message);
+        const match = matchHistory.get(event.payload?.matchId);
+        if (match) match.messages.push(event.payload?.message);
         break;
       }
 
@@ -348,13 +379,14 @@ function connect(): void {
 
       // ── Result ──────────────────────────────────────
       case 'CHOICES_REVEALED': {
-        const matchId = event.matchId as number;
+        const p = event.payload;
+        const matchId = p.matchId as number;
         const match = matchHistory.get(matchId);
 
         if (match) {
-          const theirChoice = match.opponent === event.agentA
-            ? event.choiceA
-            : event.choiceB;
+          const theirChoice = match.opponent === p.agentA
+            ? p.choiceA
+            : p.choiceB;
 
           const past = opponentHistory.get(match.opponent) || [];
           past.push(theirChoice);
@@ -362,7 +394,7 @@ function connect(): void {
 
           const myName = match.myChoice === 1 ? 'SPLIT' : 'STEAL';
           const theirName = theirChoice === 1 ? 'SPLIT' : 'STEAL';
-          console.log(`[housebot] Match ${matchId}: me=${myName} them=${theirName} (${event.resultName})`);
+          console.log(`[housebot] Match ${matchId}: me=${myName} them=${theirName} (${p.resultName})`);
         }
 
         // Match done — go back to watching, do NOT re-queue
@@ -374,12 +406,12 @@ function connect(): void {
       }
 
       case 'MATCH_CONFIRMED': {
-        console.log(`[housebot] Match ${event.matchId} on-chain: ${event.txHash}`);
+        console.log(`[housebot] Match ${event.payload?.matchId} on-chain: ${event.payload?.txHash}`);
         break;
       }
 
       case 'CHOICE_TIMEOUT': {
-        console.log(`[housebot] Match ${event.matchId} timed out`);
+        console.log(`[housebot] Match ${event.payload?.matchId} timed out`);
         inMatch = false;
         inQueue = false;
         lonelyAgentSince = null;
