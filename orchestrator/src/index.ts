@@ -7,6 +7,7 @@ import { WsServer } from './ws/server.js';
 import { MatchEngine } from './engine/match.js';
 import { QueueManager } from './engine/queue.js';
 import { TournamentManager } from './engine/tournament.js';
+import { TournamentQueueManager } from './engine/tournament-queue.js';
 import { createApi } from './api/routes.js';
 
 async function main() {
@@ -35,6 +36,9 @@ async function main() {
   const matchEngine = new MatchEngine(broadcaster, chainService);
   const queueManager = new QueueManager(broadcaster, chainService, matchEngine);
   const tournamentManager = new TournamentManager(broadcaster, chainService, matchEngine);
+  const tournamentQueueManager = new TournamentQueueManager(
+    broadcaster, chainService, tournamentManager, matchEngine, queueManager
+  );
 
   // ─── Wire callbacks ────────────────────────────────
 
@@ -42,7 +46,7 @@ async function main() {
   matchEngine.setOnMatchComplete((matchId, agentA, agentB) => {
     // Check if this is a tournament match
     const match = matchEngine.getMatch(matchId);
-    if (match) {
+    if (match && match.tournamentId !== 0) {
       // Tournament match -> let tournament manager handle it
       tournamentManager.onMatchComplete(matchId, agentA, agentB);
       return;
@@ -68,6 +72,7 @@ async function main() {
     chainService,
     queueManager,
     matchEngine,
+    tournamentQueueManager,
   });
 
   // ─── Start WebSocket server ─────────────────────────
@@ -81,6 +86,7 @@ async function main() {
     matchEngine,
     queueManager,
     tournamentManager,
+    tournamentQueueManager,
     broadcaster,
   });
 
