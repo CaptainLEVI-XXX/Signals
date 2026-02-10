@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Droplets, Loader2 } from "lucide-react";
 import { useWallet } from "@/contexts/WalletContext";
 
-const ARENA_TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000"; // Replace with deployed address
+const ARENA_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_ARENA_TOKEN_ADDRESS || "0x82C69946Cb7d881447e70a058a47Aa5715Ae7428";
 const FAUCET_ABI = ["function faucet() external"];
 
 export function OnboardingModal() {
