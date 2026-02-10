@@ -16,10 +16,11 @@ export interface HandlerDeps {
   chainService: import('../chain/service.js').ChainService;
   queueManager: import('../engine/queue.js').QueueManager;
   matchEngine: import('../engine/match.js').MatchEngine;
+  tournamentQueueManager: import('../engine/tournament-queue.js').TournamentQueueManager;
 }
 
 export function createMessageHandler(deps: HandlerDeps): MessageHandler {
-  const { authManager, broadcaster, chainService, queueManager, matchEngine } = deps;
+  const { authManager, broadcaster, chainService, queueManager, matchEngine, tournamentQueueManager } = deps;
 
   return (ws: WebSocket, clientType: ClientType, msg: WsIncomingMessage) => {
     const { type, payload } = msg;
@@ -42,16 +43,18 @@ export function createMessageHandler(deps: HandlerDeps): MessageHandler {
         }
 
         // Check on-chain registration
-        chainService.isRegistered(address).then((registered) => {
+        chainService.isRegistered(address).then(async (registered) => {
           if (!registered) {
             broadcaster.sendTo(ws, 'AUTH_FAILED', { reason: 'Agent not registered on-chain' });
             ws.close();
             return;
           }
 
-          broadcaster.authenticateAgent(ws, address, address); // name could be fetched from registry
-          broadcaster.sendTo(ws, 'AUTH_SUCCESS', { address });
-          console.log(`Agent authenticated: ${address}`);
+          // Fetch on-chain name from AgentRegistry
+          const agentName = await chainService.getAgentName(address) || `${address.slice(0, 6)}...${address.slice(-4)}`;
+          broadcaster.authenticateAgent(ws, address, agentName);
+          broadcaster.sendTo(ws, 'AUTH_SUCCESS', { address, name: agentName });
+          console.log(`Agent authenticated: ${address} (${agentName})`);
         }).catch(() => {
           broadcaster.sendTo(ws, 'AUTH_FAILED', { reason: 'Failed to verify registration' });
           ws.close();
@@ -102,10 +105,33 @@ export function createMessageHandler(deps: HandlerDeps): MessageHandler {
         break;
       }
 
+      // ─── TOURNAMENT QUEUE ────────────────────
+      case 'JOIN_TOURNAMENT_QUEUE': {
+        const client = broadcaster.getClientByWs(ws);
+        if (!client?.address) {
+          broadcaster.sendTo(ws, 'ERROR', { message: 'Not authenticated' });
+          return;
+        }
+        const result = tournamentQueueManager.addToQueue({ address: client.address, ws });
+        if (!result.success) {
+          broadcaster.sendTo(ws, 'ERROR', { message: result.error || 'Failed to join tournament queue' });
+        }
+        break;
+      }
+
+      case 'LEAVE_TOURNAMENT_QUEUE': {
+        const client = broadcaster.getClientByWs(ws);
+        if (client?.address) {
+          tournamentQueueManager.removeFromQueue(client.address);
+        }
+        break;
+      }
+
       // ─── DISCONNECT ─────────────────────────
       case 'DISCONNECT': {
         const { address } = payload as { address: string };
         queueManager.removeFromQueue(address);
+        tournamentQueueManager.removeFromQueue(address);
         // Match engine handles disconnect internally via isAgentConnected checks
         break;
       }
