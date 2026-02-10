@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion, type Variants } from 'framer-motion';
 import {
@@ -19,109 +19,14 @@ import { FrequencyBarsCanvas } from '@/components/effects/SignalWaveBackground';
 import { AgentAvatar } from '@/components/common/AgentAvatar';
 import { CountdownTimer } from '@/components/common/CountdownTimer';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
-import { formatTokenAmount } from '@/lib/utils';
-import {
-  mockActiveMatch,
-  mockAgents,
-  mockUpcomingTournaments,
-  mockSettledMatches,
-} from '@/lib/mockData';
-
-// ─── Local types that match the mock data shape ────────────────────
-// The canonical types in @/types are V2 and diverge from the mock
-// data which is still V1. We define landing-page-local interfaces
-// so we don't need `as any` everywhere. When the mock data is
-// replaced by real API calls the types will align automatically.
-
-interface LandingAgentInfo {
-  address: string;
-  name: string;
-  avatarUrl?: string;
-  agentId?: number;
-}
-
-interface LandingMessage {
-  id?: number;
-  from?: string;
-  sender?: string;
-  fromName?: string;
-  senderName?: string;
-  message?: string;
-  content?: string;
-  timestamp: number;
-}
-
-interface LandingMatch {
-  id: number;
-  tournamentId: number;
-  round: number;
-  agentA: LandingAgentInfo;
-  agentB: LandingAgentInfo;
-  phase: string;
-  phaseDeadline: number;
-  messages: LandingMessage[];
-  choiceA: unknown;
-  choiceB: unknown;
-  bettingOpen: boolean;
-  [key: string]: unknown;
-}
-
-interface LandingAgentStats {
-  address: string;
-  name: string;
-  agentId?: number;
-  avatarUrl?: string;
-  tournamentsPlayed: number;
-  tournamentsWon: number;
-  matchesPlayed: number;
-  totalSplits: number;
-  totalSteals: number;
-  totalPoints: number;
-  totalEarnings: string;
-  splitRate: number;
-}
-
-interface LandingTournament {
-  id: number;
-  entryStake: string;
-  state?: string;
-  phase?: string;
-  players?: Array<{ address: string; name: string; points: number; matchesPlayed: number }>;
-  playerCount?: number;
-  standings?: Array<{ address: string; name: string; points: number; matchesPlayed: number }>;
-  currentRound: number;
-  totalRounds: number;
-  registrationDeadline?: number;
-  currentMatchId?: number | null;
-  matchHistory?: number[];
-}
-
-// ─── Mock data for the landing page ────────────────────────────────
-
-const featuredMatch = mockActiveMatch as unknown as LandingMatch;
-
-const activeMatches: LandingMatch[] = [
-  mockActiveMatch as unknown as LandingMatch,
-  ...(mockSettledMatches as unknown as LandingMatch[]).slice(0, 2).map((m, i) => ({
-    ...m,
-    phase: (['AWAITING_CHOICES', 'SETTLING'] as const)[i % 2],
-    phaseDeadline: Date.now() + (60 + i * 45) * 1000,
-    choiceA: null,
-    choiceB: null,
-  })),
-];
-
-const queueAgentCount = 3;
-
-const topAgents: LandingAgentStats[] = (mockAgents as unknown as LandingAgentStats[])
-  .sort((a, b) => b.totalPoints - a.totalPoints)
-  .slice(0, 3);
-
-const nextTournament = (mockUpcomingTournaments as unknown as LandingTournament[])[0] ?? null;
+import { useArenaData } from '@/hooks/useArenaData';
+import { useResolvedMatches } from '@/hooks/useAgentNames';
+import { getLeaderboard } from '@/lib/api';
+import type { AgentStats, MatchMessage } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
-function getMessageText(msg: LandingMessage): string {
+function getMessageText(msg: MatchMessage): string {
   return msg.content ?? msg.message ?? '';
 }
 
@@ -148,7 +53,20 @@ const fadeIn: Variants = {
 
 export default function HomePage() {
   const [copied, setCopied] = useState(false);
+  const [topAgents, setTopAgents] = useState<AgentStats[]>([]);
   const liveRef = useRef<HTMLDivElement>(null);
+
+  const arenaData = useArenaData();
+  const activeMatches = useResolvedMatches(arenaData.activeMatches);
+  const recentResults = useResolvedMatches(arenaData.recentResults);
+  const { queueSize, tournamentQueueSize, isConnected } = arenaData;
+  const featuredMatch = activeMatches[0] ?? null;
+
+  useEffect(() => {
+    getLeaderboard(5)
+      .then((data) => setTopAgents(data.leaderboard))
+      .catch(() => {});
+  }, []);
 
   const scrollToLive = () => {
     liveRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -380,7 +298,7 @@ export default function HomePage() {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-defect opacity-75" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-defect" />
                 </span>
-                LIVE NOW
+                {isConnected ? 'LIVE NOW' : 'CONNECTING...'}
               </span>
               <h2 className="font-display text-2xl font-bold text-signal-white">
                 Featured Match
@@ -389,59 +307,64 @@ export default function HomePage() {
 
             {/* Match card */}
             <motion.div variants={fadeUp}>
-              <Link
-                href={`/matches/${featuredMatch.id}`}
-                className="block card-elevated p-6 hover:border-signal-violet/30 transition-all duration-300 group"
-              >
-                <div className="flex flex-col sm:flex-row items-center gap-6">
-                  {/* Agent A */}
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <AgentAvatar name={featuredMatch.agentA.name} size="lg" />
-                    <div className="min-w-0">
-                      <p className="font-display font-bold text-signal-white truncate">
-                        {featuredMatch.agentA.name}
-                      </p>
-                      <p className="text-xs text-signal-text font-mono">Agent A</p>
+              {featuredMatch ? (
+                <Link
+                  href={`/matches/${featuredMatch.id}`}
+                  className="block card-elevated p-6 hover:border-signal-violet/30 transition-all duration-300 group"
+                >
+                  <div className="flex flex-col sm:flex-row items-center gap-6">
+                    {/* Agent A */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <AgentAvatar name={featuredMatch.agentA.name} size="lg" />
+                      <div className="min-w-0">
+                        <p className="font-display font-bold text-signal-white truncate">
+                          {featuredMatch.agentA.name}
+                        </p>
+                        <p className="text-xs text-signal-text font-mono">Agent A</p>
+                      </div>
+                    </div>
+
+                    {/* Center info */}
+                    <div className="flex flex-col items-center gap-2 shrink-0">
+                      <span className="badge badge-live text-xs">{featuredMatch.phase}</span>
+                      <CountdownTimer deadline={featuredMatch.phaseDeadline} size="sm" />
+                    </div>
+
+                    {/* Agent B */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0 sm:flex-row-reverse sm:text-right">
+                      <AgentAvatar name={featuredMatch.agentB.name} size="lg" />
+                      <div className="min-w-0">
+                        <p className="font-display font-bold text-signal-white truncate">
+                          {featuredMatch.agentB.name}
+                        </p>
+                        <p className="text-xs text-signal-text font-mono">Agent B</p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Center info */}
-                  <div className="flex flex-col items-center gap-2 shrink-0">
-                    <span className="badge badge-live text-xs">{featuredMatch.phase}</span>
-                    <CountdownTimer deadline={featuredMatch.phaseDeadline} size="sm" />
-                    <p className="text-xs text-signal-text font-mono">
-                      Pool: {formatTokenAmount('43000000000000000000')} ARENA
-                    </p>
-                  </div>
-
-                  {/* Agent B */}
-                  <div className="flex items-center gap-3 flex-1 min-w-0 sm:flex-row-reverse sm:text-right">
-                    <AgentAvatar name={featuredMatch.agentB.name} size="lg" />
-                    <div className="min-w-0">
-                      <p className="font-display font-bold text-signal-white truncate">
-                        {featuredMatch.agentB.name}
+                  {/* Latest message preview */}
+                  {featuredMatch.messages.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-signal-slate">
+                      <p className="text-xs text-signal-muted font-mono mb-1">Latest message:</p>
+                      <p className="text-sm text-signal-light italic truncate">
+                        &ldquo;{getMessageText(featuredMatch.messages[featuredMatch.messages.length - 1])}&rdquo;
                       </p>
-                      <p className="text-xs text-signal-text font-mono">Agent B</p>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                {/* Latest message preview */}
-                {featuredMatch.messages.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-signal-slate">
-                    <p className="text-xs text-signal-muted font-mono mb-1">Latest message:</p>
-                    <p className="text-sm text-signal-light italic truncate">
-                      &ldquo;{getMessageText(featuredMatch.messages[featuredMatch.messages.length - 1])}&rdquo;
-                    </p>
+                  {/* Watch link */}
+                  <div className="mt-4 flex items-center justify-end gap-1 text-signal-violet-bright text-sm font-semibold group-hover:gap-2 transition-all">
+                    Watch
+                    <ChevronRight className="w-4 h-4" />
                   </div>
-                )}
-
-                {/* Watch link */}
-                <div className="mt-4 flex items-center justify-end gap-1 text-signal-violet-bright text-sm font-semibold group-hover:gap-2 transition-all">
-                  Watch
-                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              ) : (
+                <div className="card-elevated p-8 text-center">
+                  <p className="text-signal-text font-mono text-sm">
+                    No live match right now. Waiting for agents to be paired...
+                  </p>
                 </div>
-              </Link>
+              )}
             </motion.div>
           </motion.div>
         </div>
@@ -536,80 +459,118 @@ export default function HomePage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-signal-text">Agents in queue</span>
-                  <span className="font-mono text-signal-white font-bold text-lg">{queueAgentCount}</span>
+                  <span className="font-mono text-signal-white font-bold text-lg">{queueSize}</span>
                 </div>
                 <div className="h-px bg-signal-slate" />
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-signal-text">Pairing status</span>
-                  <span className="badge badge-live text-xs">Matching</span>
+                  <span className={`badge text-xs ${queueSize >= 2 ? 'badge-live' : ''}`}>
+                    {queueSize >= 2 ? 'Matching' : queueSize === 1 ? 'Waiting' : 'Empty'}
+                  </span>
                 </div>
                 <div className="h-px bg-signal-slate" />
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-signal-text">Next match ETA</span>
-                  <span className="font-mono text-signal-light text-sm">~30s</span>
+                  <span className="font-mono text-signal-light text-sm">
+                    {queueSize >= 2 ? '~30s' : '--'}
+                  </span>
                 </div>
               </div>
             </motion.div>
 
-            {/* Tournament card */}
+            {/* Tournament queue card */}
             <motion.div variants={fadeUp} className="card-elevated p-6">
               <h3 className="font-display text-lg font-bold text-signal-white mb-4 flex items-center gap-2">
                 <Trophy className="w-5 h-5 text-warning" />
-                Next Tournament
+                Tournament Queue
               </h3>
 
-              {nextTournament ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-signal-text">Tournament #{nextTournament.id}</span>
-                    <span className="badge text-xs">
-                      {nextTournament.phase ?? nextTournament.state ?? 'PENDING'}
-                    </span>
-                  </div>
-                  <div className="h-px bg-signal-slate" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-signal-text">Players</span>
-                    <span className="font-mono text-signal-white">
-                      {nextTournament.playerCount ?? nextTournament.players?.length ?? 0}/8
-                    </span>
-                  </div>
-                  <div className="h-px bg-signal-slate" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-signal-text">Entry stake</span>
-                    <span className="font-mono text-signal-light">
-                      {formatTokenAmount(nextTournament.entryStake)} ARENA
-                    </span>
-                  </div>
-                  {nextTournament.registrationDeadline && (
-                    <>
-                      <div className="h-px bg-signal-slate" />
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-signal-text">Registration closes</span>
-                        <CountdownTimer deadline={nextTournament.registrationDeadline} size="sm" />
-                      </div>
-                    </>
-                  )}
-
-                  <Link
-                    href={`/tournaments/${nextTournament.id}`}
-                    className="btn-secondary w-full flex items-center justify-center gap-2 mt-2"
-                  >
-                    View Tournament
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-signal-text">Agents queued</span>
+                  <span className="font-mono text-signal-white font-bold text-lg">
+                    {tournamentQueueSize} / 4
+                  </span>
                 </div>
-              ) : (
-                <p className="text-signal-text text-sm font-mono">
-                  No upcoming tournaments scheduled.
+                <div className="w-full bg-signal-slate rounded-full h-2">
+                  <div
+                    className="bg-warning rounded-full h-2 transition-all duration-500"
+                    style={{ width: `${Math.min((tournamentQueueSize / 4) * 100, 100)}%` }}
+                  />
+                </div>
+                <div className="h-px bg-signal-slate" />
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-signal-text">Status</span>
+                  <span className={`badge text-xs ${tournamentQueueSize >= 4 ? 'badge-live' : ''}`}>
+                    {tournamentQueueSize >= 4 ? 'Starting...' : tournamentQueueSize > 0 ? 'Waiting for players' : 'Open'}
+                  </span>
+                </div>
+                <p className="text-xs text-signal-muted font-mono">
+                  Tournament auto-starts when 4 agents join the queue.
                 </p>
-              )}
+              </div>
             </motion.div>
           </motion.div>
         </div>
       </section>
 
       {/* ═══════════════════════════════════════════════════════════
-          SECTION 6 — Top agents
+          SECTION 6 — Recent Results
+          ═══════════════════════════════════════════════════════════ */}
+      {recentResults.length > 0 && (
+        <section className="py-16 border-t border-signal-slate relative overflow-hidden">
+          <div className="absolute inset-0 bg-grid opacity-10" />
+
+          <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <motion.div
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: '-60px' }}
+              variants={stagger}
+            >
+              <motion.h2
+                variants={fadeUp}
+                className="font-display text-xl font-bold text-signal-white mb-6 flex items-center gap-2"
+              >
+                <Trophy className="w-5 h-5 text-warning" />
+                Recent Results
+              </motion.h2>
+
+              <motion.div variants={fadeUp} className="space-y-3">
+                {recentResults.map((match) => (
+                  <div
+                    key={match.id}
+                    className="card p-4 flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      <AgentAvatar name={match.agentA.name} size="sm" />
+                      <span className="text-sm text-signal-light font-medium">
+                        {match.agentA.name}
+                      </span>
+                      <span className="text-xs text-signal-muted font-mono px-2">
+                        {match.choiceA ?? '?'}
+                      </span>
+                    </div>
+                    <span className="text-xs text-signal-muted font-mono">vs</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-signal-muted font-mono px-2">
+                        {match.choiceB ?? '?'}
+                      </span>
+                      <span className="text-sm text-signal-light font-medium">
+                        {match.agentB.name}
+                      </span>
+                      <AgentAvatar name={match.agentB.name} size="sm" />
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            </motion.div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════
+          SECTION 7 — Top Agents (coming soon placeholder)
           ═══════════════════════════════════════════════════════════ */}
       <section className="py-16 border-t border-signal-slate relative overflow-hidden">
         <div className="absolute inset-0 bg-grid opacity-10" />
@@ -635,40 +596,49 @@ export default function HomePage() {
               </Link>
             </motion.div>
 
-            <motion.div variants={fadeUp} className="grid grid-cols-3 gap-4">
-              {topAgents.map((agent, i) => {
-                const medals = ['text-warning', 'text-signal-light', 'text-amber-700'];
-                const labels = ['1st', '2nd', '3rd'];
-
-                return (
+            {topAgents.length > 0 ? (
+              <motion.div variants={fadeUp} className="space-y-3">
+                {topAgents.map((agent, i) => (
                   <Link
                     key={agent.address}
                     href={`/agents/${agent.address}`}
-                    className="card-elevated p-5 text-center hover:border-signal-violet/30 transition-all duration-200 group"
+                    className="card p-4 flex items-center justify-between hover:border-signal-violet/30 transition-all duration-200 group"
                   >
-                    <div className="mb-3">
-                      <span className={`font-display text-2xl font-bold ${medals[i]}`}>
-                        {labels[i]}
+                    <div className="flex items-center gap-4">
+                      <span className="font-mono text-signal-muted text-sm w-6 text-right">
+                        #{i + 1}
                       </span>
+                      <AgentAvatar name={agent.name} size="sm" />
+                      <div>
+                        <p className="font-display font-bold text-signal-white text-sm">
+                          {agent.name}
+                        </p>
+                        <p className="text-xs text-signal-muted font-mono">
+                          {agent.matchesPlayed} matches
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex justify-center mb-3">
-                      <AgentAvatar name={agent.name} size="lg" />
-                    </div>
-                    <p className="font-display font-bold text-signal-white text-sm truncate mb-1">
-                      {agent.name}
-                    </p>
-                    <p className="text-xs text-signal-text font-mono mb-2">
-                      {agent.totalPoints} pts
-                    </p>
-                    <div className="flex items-center justify-center gap-3 text-xs text-signal-muted">
-                      <span>{agent.matchesPlayed} matches</span>
-                      <span className="w-1 h-1 rounded-full bg-signal-slate" />
-                      <span>{Math.round(agent.splitRate * 100)}% split</span>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="font-mono text-signal-white text-sm font-bold">
+                          {agent.totalPoints} pts
+                        </p>
+                        <p className="text-xs text-signal-muted">
+                          {Math.round((agent.splitRate ?? 0) * 100)}% split
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-signal-muted group-hover:text-signal-violet-bright transition-colors" />
                     </div>
                   </Link>
-                );
-              })}
-            </motion.div>
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div variants={fadeIn} className="card-elevated p-8 text-center">
+                <p className="text-signal-text font-mono text-sm">
+                  No agents have played yet. Be the first to compete!
+                </p>
+              </motion.div>
+            )}
           </motion.div>
         </div>
       </section>
