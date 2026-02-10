@@ -28,9 +28,9 @@ const enum MatchResult {
   BOTH_STEAL = 3,
 }
 
-// Choice enum: 0 = SPLIT, 1 = STEAL
-const CHOICE_SPLIT = 0;
-const CHOICE_STEAL = 1;
+// Choice enum matches contract: 1 = SPLIT, 2 = STEAL
+const CHOICE_SPLIT = 1;
+const CHOICE_STEAL = 2;
 
 // ─── MatchStateMachine ───────────────────────────────
 
@@ -93,8 +93,40 @@ class MatchStateMachine {
 
   // ─── State: NEGOTIATION ────────────────────────────
 
-  private startNegotiation() {
+  private async startNegotiation() {
     this.state = 'NEGOTIATION';
+
+    // Fetch opponent stats for strategic context
+    let opponentStatsB: Record<string, unknown> | null = null;
+    let opponentStatsA: Record<string, unknown> | null = null;
+    try {
+      const [statsA, statsB] = await Promise.all([
+        this.chainService.getAgentStats(this.agentA),
+        this.chainService.getAgentStats(this.agentB),
+      ]);
+      // Stats of B sent to A (so A knows about their opponent)
+      if (statsB.totalMatches > 0) {
+        opponentStatsB = {
+          matchesPlayed: statsB.totalMatches,
+          splitRate: statsB.splits / statsB.totalMatches,
+          stealRate: statsB.steals / statsB.totalMatches,
+          totalPoints: statsB.totalPoints,
+          avgPointsPerMatch: statsB.totalPoints / statsB.totalMatches,
+        };
+      }
+      // Stats of A sent to B
+      if (statsA.totalMatches > 0) {
+        opponentStatsA = {
+          matchesPlayed: statsA.totalMatches,
+          splitRate: statsA.splits / statsA.totalMatches,
+          stealRate: statsA.steals / statsA.totalMatches,
+          totalPoints: statsA.totalPoints,
+          avgPointsPerMatch: statsA.totalPoints / statsA.totalMatches,
+        };
+      }
+    } catch {
+      // Stats unavailable — proceed without them
+    }
 
     // Notify both agents
     const matchInfo = {
@@ -113,6 +145,7 @@ class MatchStateMachine {
       you: this.agentA,
       opponent: this.agentB,
       opponentName: this.agentBName,
+      opponentStats: opponentStatsB,
     });
 
     this.broadcaster.sendToAgent(this.agentB, 'MATCH_STARTED', {
@@ -120,6 +153,7 @@ class MatchStateMachine {
       you: this.agentB,
       opponent: this.agentA,
       opponentName: this.agentAName,
+      opponentStats: opponentStatsA,
     });
 
     // Public broadcast for spectators
@@ -237,7 +271,7 @@ class MatchStateMachine {
     }
 
     if (choice !== CHOICE_SPLIT && choice !== CHOICE_STEAL) {
-      return { success: false, error: 'Invalid choice. Must be 0 (SPLIT) or 1 (STEAL)' };
+      return { success: false, error: 'Invalid choice. Must be 1 (SPLIT) or 2 (STEAL)' };
     }
 
     const fromLower = from.toLowerCase();
@@ -502,6 +536,10 @@ class MatchStateMachine {
       commitHashB: this.commitHashB,
     };
   }
+
+  getChoices(): { choiceA: number | null; choiceB: number | null } {
+    return { choiceA: this.choiceA, choiceB: this.choiceB };
+  }
 }
 
 // ─── MatchEngine ─────────────────────────────────────
@@ -612,6 +650,16 @@ export class MatchEngine {
     return this.matches.get(matchId);
   }
 
+  getActiveMatches(): ReturnType<MatchStateMachine['getPublicState']>[] {
+    const active: ReturnType<MatchStateMachine['getPublicState']>[] = [];
+    for (const match of this.matches.values()) {
+      if (match.getState() !== 'COMPLETE') {
+        active.push(match.getPublicState());
+      }
+    }
+    return active;
+  }
+
   // ─── Match completion ──────────────────────────────
 
   private handleMatchComplete(matchId: number) {
@@ -635,10 +683,13 @@ export class MatchEngine {
     // Destroy timers
     match.destroy();
 
-    // Remove from active matches
-    this.matches.delete(matchId);
-
     console.log(`[Match ${matchId}] Complete. ${agentA} vs ${agentB}`);
+
+    // Keep match in the map for 5 minutes so it can still be fetched via API,
+    // then clean up to avoid unbounded memory growth.
+    setTimeout(() => {
+      this.matches.delete(matchId);
+    }, 5 * 60 * 1000);
 
     // Notify callback (e.g., QueueManager to re-queue agents)
     if (this.onMatchComplete) {
