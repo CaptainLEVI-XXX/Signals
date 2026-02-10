@@ -65,6 +65,15 @@ export class ChainService {
     return this.registry.isRegistered(agent);
   }
 
+  async getAgentName(agent: string): Promise<string> {
+    try {
+      const agentData = await this.registry.getAgentByWallet(agent);
+      return agentData.name || '';
+    } catch {
+      return '';
+    }
+  }
+
   async getMatch(matchId: number) {
     return this.contract.getMatch(matchId);
   }
@@ -77,12 +86,109 @@ export class ChainService {
     return this.contract.getOdds(matchId, outcome);
   }
 
+  async getOutcomePools(matchId: number): Promise<bigint[]> {
+    return this.contract.getOutcomePools(matchId);
+  }
+
   async getDomainSeparator(): Promise<string> {
     return this.contract.domainSeparator();
   }
 
   getContractAddress(): string {
     return config.splitOrStealAddress;
+  }
+
+  // ─── AGENT STATS (on-chain) ────────────────────────
+
+  async getAgentStats(address: string): Promise<{
+    totalMatches: number;
+    splits: number;
+    steals: number;
+    totalPoints: number;
+    tournamentsPlayed: number;
+    tournamentsWon: number;
+    totalPrizesEarned: string;
+  }> {
+    const stats = await this.contract.getAgentStats(address);
+    return {
+      totalMatches: Number(stats.totalMatches),
+      splits: Number(stats.splits),
+      steals: Number(stats.steals),
+      totalPoints: Number(stats.totalPoints),
+      tournamentsPlayed: Number(stats.tournamentsPlayed),
+      tournamentsWon: Number(stats.tournamentsWon),
+      totalPrizesEarned: stats.totalPrizesEarned.toString(),
+    };
+  }
+
+  async getRegisteredAgentCount(): Promise<number> {
+    return Number(await this.registry.agentCount());
+  }
+
+  async getRegisteredAgents(startId: number, count: number): Promise<Array<{
+    id: number;
+    wallet: string;
+    name: string;
+  }>> {
+    const agents = await this.registry.getAgents(startId, count);
+    return agents.map((a: { id: bigint; wallet: string; name: string }) => ({
+      id: Number(a.id),
+      wallet: a.wallet,
+      name: a.name,
+    }));
+  }
+
+  async getLeaderboard(limit: number = 50, offset: number = 0): Promise<{
+    leaderboard: Array<{
+      address: string;
+      name: string;
+      matchesPlayed: number;
+      totalSplits: number;
+      totalSteals: number;
+      totalPoints: number;
+      splitRate: number;
+      tournamentsPlayed: number;
+      tournamentsWon: number;
+      totalEarnings: string;
+    }>;
+    total: number;
+  }> {
+    // Get all registered agents
+    const agentCount = await this.getRegisteredAgentCount();
+    if (agentCount === 0) return { leaderboard: [], total: 0 };
+
+    const agents = await this.getRegisteredAgents(1, agentCount);
+
+    // Fetch stats for each agent in parallel
+    const statsPromises = agents.map(async (agent) => {
+      const stats = await this.getAgentStats(agent.wallet);
+      return {
+        address: agent.wallet,
+        name: agent.name,
+        matchesPlayed: stats.totalMatches,
+        totalSplits: stats.splits,
+        totalSteals: stats.steals,
+        totalPoints: stats.totalPoints,
+        tournamentsPlayed: stats.tournamentsPlayed,
+        tournamentsWon: stats.tournamentsWon,
+        totalEarnings: stats.totalPrizesEarned,
+        splitRate: stats.totalMatches > 0
+          ? stats.splits / stats.totalMatches
+          : 0,
+      };
+    });
+
+    const allStats = await Promise.all(statsPromises);
+
+    // Filter out agents with no matches, sort by totalPoints desc
+    const withMatches = allStats
+      .filter(s => s.matchesPlayed > 0)
+      .sort((a, b) => b.totalPoints - a.totalPoints);
+
+    const total = withMatches.length;
+    const leaderboard = withMatches.slice(offset, offset + limit);
+
+    return { leaderboard, total };
   }
 
   // ─── BATCH: Create Quick Matches ─────────────────
@@ -209,6 +315,11 @@ export class ChainService {
 
   async startTournament(id: number): Promise<void> {
     const tx = await this.contract.startTournament(id);
+    await tx.wait();
+  }
+
+  async cancelTournament(id: number): Promise<void> {
+    const tx = await this.contract.cancelTournament(id);
     await tx.wait();
   }
 
