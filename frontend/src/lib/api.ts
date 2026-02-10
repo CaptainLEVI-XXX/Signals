@@ -1,4 +1,4 @@
-import type { Match, Tournament, AgentStats, BettingPool, BettingOdds } from '@/types';
+import type { Match, Tournament, AgentStats, BettingPool, BettingOdds, BetOutcome } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -15,6 +15,27 @@ async function fetchAPI<T>(endpoint: string): Promise<T> {
   return res.json();
 }
 
+// Orchestrator wire format for match state
+export interface OrchestratorMatchState {
+  matchId: number;
+  agentA: string;
+  agentB: string;
+  agentAName: string;
+  agentBName: string;
+  tournamentId: number;
+  state: string;
+  messages: Array<{ from: string; fromName: string; message: string; timestamp: number }>;
+  choiceALocked: boolean;
+  choiceBLocked: boolean;
+  commitHashA: string | null;
+  commitHashB: string | null;
+}
+
+// Active matches
+export async function getActiveMatches() {
+  return fetchAPI<{ matches: OrchestratorMatchState[] }>('/matches/active');
+}
+
 // Health
 export async function getHealth() {
   return fetchAPI<{
@@ -25,9 +46,9 @@ export async function getHealth() {
   }>('/health');
 }
 
-// Match
+// Match (returns raw orchestrator format when source=engine)
 export async function getMatch(id: number) {
-  return fetchAPI<{ source: string; match: Match }>(`/match/${id}`);
+  return fetchAPI<{ source: string; match: OrchestratorMatchState }>(`/match/${id}`);
 }
 
 export async function getMatchOdds(id: number) {
@@ -83,27 +104,50 @@ export async function getCurrentMatch() {
   return { match: null as Match | null };
 }
 
-export async function getLeaderboard() {
-  return { leaderboard: [] as AgentStats[], total: 0 };
+export async function getLeaderboard(limit = 50, offset = 0) {
+  return fetchAPI<{ leaderboard: AgentStats[]; total: number }>(
+    `/leaderboard?limit=${limit}&offset=${offset}`
+  );
 }
 
 export async function getBettingPool(matchId: number) {
-  const odds = await getMatchOdds(matchId);
+  const [poolRes, oddsRes] = await Promise.allSettled([
+    fetchAPI<{
+      matchId: number;
+      state: number;
+      totalPool: string;
+      outcomePools: Record<string, string>;
+      result: number;
+    }>(`/match/${matchId}/pool`),
+    getMatchOdds(matchId),
+  ]);
+
+  // Extract pool data (from /match/:id/pool) or fall back to defaults
+  const poolData = poolRes.status === 'fulfilled'
+    ? poolRes.value
+    : { state: 1, totalPool: '0', outcomePools: { BOTH_SPLIT: '0', A_STEALS: '0', B_STEALS: '0', BOTH_STEAL: '0' }, result: 0 };
+
+  // Extract odds data or fall back to zeros
+  const oddsData = oddsRes.status === 'fulfilled'
+    ? oddsRes.value
+    : { pool: '0', odds: { bothSplit: '0', aSteal: '0', bSteal: '0', bothSteal: '0' } };
+
   return {
     pool: {
       matchId,
-      totalPool: odds.pool,
-      outcomePools: {},
-      bettingOpen: true,
-      settled: false,
-      winningOutcome: null,
+      totalPool: poolData.totalPool || oddsData.pool || '0',
+      outcomePools: poolData.outcomePools,
+      bettingOpen: poolData.state === 1,
+      settled: poolData.state === 3,
+      winningOutcome: poolData.state === 3 ? (poolData.result as unknown as BetOutcome) : null,
     } as BettingPool,
     odds: {
-      BOTH_SPLIT: parseFloat(odds.odds.bothSplit) || 0,
-      A_STEALS: parseFloat(odds.odds.aSteal) || 0,
-      B_STEALS: parseFloat(odds.odds.bSteal) || 0,
-      BOTH_STEAL: parseFloat(odds.odds.bothSteal) || 0,
+      BOTH_SPLIT: parseFloat(oddsData.odds.bothSplit) || 0,
+      A_STEALS: parseFloat(oddsData.odds.aSteal) || 0,
+      B_STEALS: parseFloat(oddsData.odds.bSteal) || 0,
+      BOTH_STEAL: parseFloat(oddsData.odds.bothSteal) || 0,
     } as BettingOdds,
+    poolState: poolData.state,
   };
 }
 
@@ -112,10 +156,15 @@ export async function getTournaments() {
 }
 
 export async function getAgent(address: string) {
-  return fetchAPI<{ agent: AgentStats }>(`/agent/${address}/status`);
+  return fetchAPI<{ agent: AgentStats }>(`/agent/${address}/stats`);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function getAgentMatches(address: string, limit = 20, offset = 0) {
-  return { matches: [] as Array<{ id: number; tournamentId: number; round: number; phase: string; opponent: { address: string; name: string }; myChoice?: number; myPoints?: number }>, total: 0 };
+export async function getAgentMatches(address: string, limit = 20) {
+  return fetchAPI<{ matches: Array<{ id: number; tournamentId: number; round: number; phase: string; opponent: { address: string; name: string }; myChoice?: number; myPoints?: number }>; total: number }>(
+    `/agent/${address}/matches?limit=${limit}`
+  );
+}
+
+export async function getTournamentQueue() {
+  return fetchAPI<{ size: number; agents: string[] }>('/tournament-queue');
 }
