@@ -67,6 +67,16 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         bool hasClaimed;
     }
 
+    struct AgentStats {
+        uint256 totalMatches;
+        uint256 splits;
+        uint256 steals;
+        uint256 totalPoints;
+        uint256 tournamentsPlayed;
+        uint256 tournamentsWon;
+        uint256 totalPrizesEarned;
+    }
+
     struct QuickMatchPair {
         address agentA;
         address agentB;
@@ -89,7 +99,7 @@ contract SplitOrSteal is BettingEngine, EIP712 {
 
     // ─── Constants ──────────────────────────────────────────────────────
 
-    uint256 public constant QUICK_MATCH_STAKE = 100 ether; // 100 ARENA
+    uint256 public constant QUICK_MATCH_STAKE =1 ether; // 1 ARENA
     uint8 public constant BATCH_CAP = 30;
 
     uint256 public constant POINTS_BOTH_SPLIT = 3;
@@ -124,6 +134,9 @@ contract SplitOrSteal is BettingEngine, EIP712 {
 
     // Quick match stakes tracked per match
     mapping(uint256 => uint256) internal _quickMatchStakes;
+
+    // Global agent stats (across all matches/tournaments)
+    mapping(address => AgentStats) public agentStats;
 
     // ─── Events ─────────────────────────────────────────────────────────
 
@@ -541,6 +554,12 @@ contract SplitOrSteal is BettingEngine, EIP712 {
             arenaToken.safeTransfer(msg.sender, prize);
         }
 
+        // Track global tournament wins and prizes
+        if (rank == 1) {
+            agentStats[msg.sender].tournamentsWon++;
+        }
+        agentStats[msg.sender].totalPrizesEarned += prize;
+
         emit PrizeClaimed(tournamentId, msg.sender, rank, prize);
     }
 
@@ -566,6 +585,10 @@ contract SplitOrSteal is BettingEngine, EIP712 {
 
     function getMatch(uint256 matchId) external view returns (Match memory) {
         return matches[matchId];
+    }
+
+    function getAgentStats(address agent) external view returns (AgentStats memory) {
+        return agentStats[agent];
     }
 
     /// @notice Get the EIP-712 domain separator
@@ -631,6 +654,9 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         t.playerCount++;
         t.prizePool += t.entryStake;
 
+        // Track global tournament participation
+        agentStats[msg.sender].tournamentsPlayed++;
+
         emit PlayerJoined(tournamentId, msg.sender, t.playerCount);
     }
 
@@ -664,6 +690,18 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         m.choiceA = aTimedOut ? Choice.STEAL : choiceA;
         m.choiceB = bTimedOut ? Choice.STEAL : choiceB;
         m.settled = true;
+
+        // Update global agent stats
+        AgentStats storage globalA = agentStats[m.agentA];
+        AgentStats storage globalB = agentStats[m.agentB];
+        globalA.totalMatches++;
+        globalB.totalMatches++;
+        globalA.totalPoints += pointsA;
+        globalB.totalPoints += pointsB;
+        if (m.choiceA == Choice.SPLIT) globalA.splits++;
+        else if (m.choiceA == Choice.STEAL) globalA.steals++;
+        if (m.choiceB == Choice.SPLIT) globalB.splits++;
+        else if (m.choiceB == Choice.STEAL) globalB.steals++;
 
         // Quick match payout
         if (m.tournamentId == 0) {
