@@ -11,7 +11,17 @@ export function formatAddress(address: string, chars = 4): string {
 }
 
 export function formatTokenAmount(amount: string | bigint, decimals = 18): string {
-  const value = typeof amount === 'string' ? BigInt(amount) : amount;
+  let value: bigint;
+  if (typeof amount === 'bigint') {
+    value = amount;
+  } else {
+    try {
+      const cleaned = (amount || '0').replace(/,/g, '');
+      value = /^\d+$/.test(cleaned) ? BigInt(cleaned) : 0n;
+    } catch {
+      value = 0n;
+    }
+  }
   const divisor = BigInt(10 ** decimals);
   const whole = value / divisor;
   const fraction = value % divisor;
@@ -91,14 +101,14 @@ export function getStateColor(state: string): string {
 }
 
 export function getChoiceLabel(choice: number | null): string {
-  if (choice === 0) return 'SPLIT';
-  if (choice === 1) return 'STEAL';
+  if (choice === 1) return 'SPLIT';
+  if (choice === 2) return 'STEAL';
   return '?';
 }
 
 export function getChoiceEmoji(choice: number | null): string {
-  if (choice === 0) return '🤝';
-  if (choice === 1) return '⚔️';
+  if (choice === 1) return '🤝';
+  if (choice === 2) return '⚔️';
   return '❓';
 }
 
