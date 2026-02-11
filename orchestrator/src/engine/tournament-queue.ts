@@ -5,6 +5,7 @@ import { ChainService } from '../chain/service.js';
 import { TournamentManager } from './tournament.js';
 import { MatchEngine } from './match.js';
 import { QueueManager } from './queue.js';
+import { buildTournamentJoinPayload, validateTournamentJoinSignature } from '../chain/signing.js';
 
 // ─── Types ───────────────────────────────────────────
 
@@ -14,13 +15,22 @@ interface QueuedAgent {
   joinedAt: number;
 }
 
+interface PendingJoin {
+  agent: QueuedAgent;
+  nonce: number;
+}
+
 // ─── TournamentQueueManager ─────────────────────────
 
 export class TournamentQueueManager {
   private queue: QueuedAgent[] = [];
   private triggerTimer: NodeJS.Timeout | null = null;
-  private registrationPollTimer: NodeJS.Timeout | null = null;
   private pendingTournamentId: number | null = null;
+
+  // Gasless join tracking: agents we've invited and are waiting for signatures from
+  private pendingJoins: Map<string, PendingJoin> = new Map(); // address -> PendingJoin
+  private joinedCount = 0;
+  private joinDeadlineTimer: NodeJS.Timeout | null = null;
 
   // Config
   private readonly MIN_PLAYERS = 4;
@@ -29,6 +39,7 @@ export class TournamentQueueManager {
   private readonly ENTRY_STAKE = ethers.parseEther('1'); // 1 ARENA
   private readonly REGISTRATION_DURATION = 120; // seconds
   private readonly TRIGGER_DELAY = 3000; // 3s buffer after hitting min
+  private readonly JOIN_RESPONSE_TIMEOUT = 30_000; // 30s for agents to sign and respond
 
   private broadcaster: Broadcaster;
   private chainService: ChainService;
@@ -120,6 +131,90 @@ export class TournamentQueueManager {
     }
   }
 
+  // ─── Handle signed join response from agent ─────────
+
+  async onJoinSigned(
+    agentAddress: string,
+    tournamentId: number,
+    joinSignature: string,
+    permitDeadline: number,
+    v: number,
+    r: string,
+    s: string
+  ): Promise<void> {
+    const addr = agentAddress.toLowerCase();
+
+    // Validate this agent was invited to this tournament
+    if (this.pendingTournamentId !== tournamentId) {
+      console.warn(`[TournamentQueue] Agent ${addr} sent join for wrong tournament ${tournamentId} (pending: ${this.pendingTournamentId})`);
+      return;
+    }
+
+    const pending = this.pendingJoins.get(addr);
+    if (!pending) {
+      console.warn(`[TournamentQueue] Agent ${addr} sent join but not in pending list`);
+      return;
+    }
+
+    // Validate signature locally before submitting on-chain
+    const contractAddress = this.chainService.getContractAddress();
+    const valid = validateTournamentJoinSignature(
+      contractAddress,
+      tournamentId,
+      pending.nonce,
+      joinSignature,
+      agentAddress
+    );
+
+    if (!valid) {
+      console.warn(`[TournamentQueue] Invalid join signature from ${addr}`);
+      this.broadcaster.sendTo(pending.agent.ws, 'TOURNAMENT_JOIN_FAILED', {
+        tournamentId,
+        reason: 'Invalid signature',
+      });
+      return;
+    }
+
+    // Submit on-chain: joinTournamentFor
+    try {
+      const txHash = await this.chainService.joinTournamentFor(
+        tournamentId,
+        agentAddress,
+        pending.nonce,
+        joinSignature,
+        permitDeadline,
+        v,
+        r,
+        s
+      );
+
+      // Register in tournament manager in-memory state
+      this.tournamentManager.registerPlayer(tournamentId, agentAddress);
+
+      this.pendingJoins.delete(addr);
+      this.joinedCount++;
+
+      this.broadcaster.sendTo(pending.agent.ws, 'TOURNAMENT_JOINED', {
+        tournamentId,
+        txHash,
+      });
+
+      console.log(`[TournamentQueue] Agent ${addr} joined tournament ${tournamentId} on-chain (tx: ${txHash}). ${this.joinedCount} joined so far.`);
+
+      // Check if we have enough to start
+      if (this.joinedCount >= this.MIN_PLAYERS) {
+        this.clearJoinDeadline();
+        await this.tryStartTournament(tournamentId);
+      }
+    } catch (err) {
+      console.error(`[TournamentQueue] Failed to join agent ${addr} on-chain:`, err);
+      this.broadcaster.sendTo(pending.agent.ws, 'TOURNAMENT_JOIN_FAILED', {
+        tournamentId,
+        reason: 'On-chain transaction failed',
+      });
+    }
+  }
+
   // ─── Trigger tournament creation ────────────────────
 
   private async triggerTournament() {
@@ -139,23 +234,50 @@ export class TournamentQueueManager {
       );
 
       this.pendingTournamentId = tournamentId;
+      this.joinedCount = 0;
+      this.pendingJoins.clear();
 
-      // Send TOURNAMENT_INVITE to each participant
+      // Fetch nonces and send TOURNAMENT_JOIN_REQUEST to each participant
+      const contractAddress = this.chainService.getContractAddress();
+
       for (const agent of participants) {
-        this.broadcaster.sendTo(agent.ws, 'TOURNAMENT_INVITE', {
-          tournamentId,
-          entryStake: this.ENTRY_STAKE.toString(),
-          registrationDuration: this.REGISTRATION_DURATION,
-          minPlayers: this.MIN_PLAYERS,
-          maxPlayers: this.MAX_PLAYERS,
-          totalRounds: this.TOTAL_ROUNDS,
-        });
+        try {
+          const nonce = await this.chainService.getChoiceNonce(agent.address);
+
+          this.pendingJoins.set(agent.address.toLowerCase(), {
+            agent,
+            nonce,
+          });
+
+          // Build EIP-712 typed data for the agent to sign
+          const joinPayload = buildTournamentJoinPayload(contractAddress, tournamentId, nonce);
+
+          this.broadcaster.sendTo(agent.ws, 'TOURNAMENT_JOIN_REQUEST', {
+            tournamentId,
+            entryStake: this.ENTRY_STAKE.toString(),
+            nonce,
+            signingPayload: joinPayload,
+            permitData: {
+              spender: contractAddress,
+              value: this.ENTRY_STAKE.toString(),
+            },
+            registrationDuration: this.REGISTRATION_DURATION,
+            minPlayers: this.MIN_PLAYERS,
+            maxPlayers: this.MAX_PLAYERS,
+            totalRounds: this.TOTAL_ROUNDS,
+          });
+        } catch (err) {
+          console.error(`[TournamentQueue] Failed to prepare join request for ${agent.address}:`, err);
+        }
       }
 
-      console.log(`[TournamentQueue] Created tournament ${tournamentId}, invited ${participants.length} agents.`);
+      console.log(`[TournamentQueue] Created tournament ${tournamentId}, sent join requests to ${participants.length} agents.`);
 
-      // Monitor registration — poll every 2s
-      this.startRegistrationMonitor(tournamentId, participants);
+      // Set a deadline for agents to respond
+      this.joinDeadlineTimer = setTimeout(() => {
+        this.onJoinDeadlineReached(tournamentId, participants);
+      }, this.JOIN_RESPONSE_TIMEOUT);
+
     } catch (err) {
       console.error('[TournamentQueue] Failed to create tournament:', err);
       // Re-queue agents
@@ -165,74 +287,56 @@ export class TournamentQueueManager {
     }
   }
 
-  // ─── Monitor registration ──────────────────────────
+  // ─── Join deadline reached ────────────────────────
 
-  private startRegistrationMonitor(tournamentId: number, invitedAgents: QueuedAgent[]) {
-    let elapsed = 0;
-    const pollInterval = 2000;
+  private async onJoinDeadlineReached(tournamentId: number, invitedAgents: QueuedAgent[]) {
+    this.joinDeadlineTimer = null;
 
-    this.registrationPollTimer = setInterval(async () => {
-      elapsed += pollInterval;
+    console.log(`[TournamentQueue] Join deadline reached for tournament ${tournamentId}. ${this.joinedCount} agents joined.`);
 
-      const tournament = this.tournamentManager.getTournament(tournamentId);
-      if (!tournament) {
-        this.clearRegistrationMonitor();
-        return;
-      }
+    if (this.joinedCount >= this.MIN_PLAYERS) {
+      await this.tryStartTournament(tournamentId);
+    } else {
+      // Not enough — cancel
+      try {
+        await this.chainService.cancelTournament(tournamentId);
+        console.log(`[TournamentQueue] Tournament ${tournamentId} cancelled — only ${this.joinedCount} joined.`);
 
-      const playerCount = tournament.playerCount ?? 0;
-
-      // If enough players joined and we haven't started yet
-      if (playerCount >= this.MIN_PLAYERS && tournament.phase === 'REGISTRATION') {
-        this.clearRegistrationMonitor();
-        try {
-          await this.tournamentManager.startTournament(tournamentId);
-          console.log(`[TournamentQueue] Tournament ${tournamentId} started with ${playerCount} players.`);
-        } catch (err) {
-          console.error(`[TournamentQueue] Failed to start tournament ${tournamentId}:`, err);
-        }
-        this.pendingTournamentId = null;
-        return;
-      }
-
-      // Registration deadline passed
-      if (elapsed >= this.REGISTRATION_DURATION * 1000) {
-        this.clearRegistrationMonitor();
-
-        if (playerCount >= this.MIN_PLAYERS) {
-          // Enough players — start
-          try {
-            await this.tournamentManager.startTournament(tournamentId);
-            console.log(`[TournamentQueue] Tournament ${tournamentId} started at deadline with ${playerCount} players.`);
-          } catch (err) {
-            console.error(`[TournamentQueue] Failed to start tournament ${tournamentId} at deadline:`, err);
-          }
-        } else {
-          // Not enough — cancel
-          try {
-            await this.chainService.cancelTournament(tournamentId);
-            console.log(`[TournamentQueue] Tournament ${tournamentId} cancelled — only ${playerCount} joined.`);
-
-            // Re-queue invited agents that are still connected
-            for (const agent of invitedAgents) {
-              if (agent.ws.readyState === WebSocket.OPEN) {
-                this.queue.push(agent);
-              }
-            }
-            this.broadcastQueueUpdate();
-          } catch (err) {
-            console.error(`[TournamentQueue] Failed to cancel tournament ${tournamentId}:`, err);
+        // Re-queue invited agents that are still connected and didn't join
+        for (const agent of invitedAgents) {
+          if (agent.ws.readyState === WebSocket.OPEN) {
+            this.queue.push(agent);
           }
         }
-        this.pendingTournamentId = null;
+        this.broadcastQueueUpdate();
+      } catch (err) {
+        console.error(`[TournamentQueue] Failed to cancel tournament ${tournamentId}:`, err);
       }
-    }, pollInterval);
+    }
+
+    this.pendingTournamentId = null;
+    this.pendingJoins.clear();
+    this.joinedCount = 0;
   }
 
-  private clearRegistrationMonitor() {
-    if (this.registrationPollTimer) {
-      clearInterval(this.registrationPollTimer);
-      this.registrationPollTimer = null;
+  // ─── Try to start tournament ────────────────────
+
+  private async tryStartTournament(tournamentId: number) {
+    try {
+      await this.tournamentManager.startTournament(tournamentId);
+      console.log(`[TournamentQueue] Tournament ${tournamentId} started with ${this.joinedCount} players.`);
+    } catch (err) {
+      console.error(`[TournamentQueue] Failed to start tournament ${tournamentId}:`, err);
+    }
+    this.pendingTournamentId = null;
+    this.pendingJoins.clear();
+    this.joinedCount = 0;
+  }
+
+  private clearJoinDeadline() {
+    if (this.joinDeadlineTimer) {
+      clearTimeout(this.joinDeadlineTimer);
+      this.joinDeadlineTimer = null;
     }
   }
 
