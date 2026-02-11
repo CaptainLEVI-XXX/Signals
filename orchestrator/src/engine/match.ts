@@ -42,6 +42,7 @@ class MatchStateMachine {
   agentBName: string;
   tournamentId: number;
   state: MatchState = 'NEGOTIATION';
+  phaseDeadline: number = 0;
 
   private negotiationTimer: NodeJS.Timeout | null = null;
   private choiceTimer: NodeJS.Timeout | null = null;
@@ -95,6 +96,7 @@ class MatchStateMachine {
 
   private async startNegotiation() {
     this.state = 'NEGOTIATION';
+    this.phaseDeadline = Date.now() + config.negotiationDuration;
 
     // Fetch opponent stats for strategic context
     let opponentStatsB: Record<string, unknown> | null = null;
@@ -214,6 +216,7 @@ class MatchStateMachine {
     }
 
     this.state = 'AWAITING_CHOICES';
+    this.phaseDeadline = Date.now() + config.choiceDuration;
 
     // Fetch current nonces from chain for each agent
     try {
@@ -349,6 +352,7 @@ class MatchStateMachine {
     }
 
     this.state = 'SETTLING';
+    this.phaseDeadline = 0;
 
     // Compute result
     const result = this.computeResult(this.choiceA!, this.choiceB!);
@@ -529,6 +533,7 @@ class MatchStateMachine {
       agentBName: this.agentBName,
       tournamentId: this.tournamentId,
       state: this.state,
+      phaseDeadline: this.phaseDeadline,
       messages: this.messages,
       choiceALocked: this.sigA !== null,
       choiceBLocked: this.sigB !== null,
