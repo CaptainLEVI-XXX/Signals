@@ -26,8 +26,9 @@ export function ChoiceCard({
   };
 
   // Map SPLIT/STEAL to COOPERATE/DEFECT terminology
-  const isSplit = choice === 'SPLIT';
-  const isSteal = choice === 'STEAL';
+  // Handle both string ('SPLIT'/'STEAL') and numeric (1=SPLIT, 2=STEAL) values
+  const isSplit = choice === 'SPLIT' || choice === 1;
+  const isSteal = choice === 'STEAL' || choice === 2;
   const displayChoice = isSplit ? 'COOPERATE' : isSteal ? 'DEFECT' : '';
 
   if (!revealed || !choice) {
