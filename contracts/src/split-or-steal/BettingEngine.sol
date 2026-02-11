@@ -53,6 +53,7 @@ abstract contract BettingEngine {
 
     mapping(uint256 => Pool) internal _pools;
     mapping(uint256 => mapping(address => Bet)) internal _bets;
+    mapping(address => uint256[]) internal _bettorMatchIds;
     uint256 public totalFeesCollected;
 
     // ─── Events ─────────────────────────────────────────────────────────
@@ -246,6 +247,14 @@ abstract contract BettingEngine {
         return _pools[matchId].outcomePools;
     }
 
+    function getBettorMatchIds(address bettor) external view returns (uint256[] memory) {
+        return _bettorMatchIds[bettor];
+    }
+
+    function getBettorMatchCount(address bettor) external view returns (uint256) {
+        return _bettorMatchIds[bettor].length;
+    }
+
     function calculatePotentialWinnings(uint256 matchId, uint8 outcome, uint256 amount)
         external
         view
@@ -279,6 +288,7 @@ abstract contract BettingEngine {
         _getBettingToken().safeTransferFrom(msg.sender, address(this), amount);
 
         _bets[matchId][msg.sender] = Bet({amount: amount, outcome: outcome, claimed: false});
+        _bettorMatchIds[msg.sender].push(matchId);
 
         pool.totalPool += amount;
         pool.outcomePools[outcome] += amount;
