@@ -141,20 +141,61 @@ export function createApi(deps: ApiDeps): express.Express {
 
   // ─── Tournament info ─────────────────────────────────
 
-  app.get('/tournament/:id', (req, res) => {
+  app.get('/tournament/:id', async (req, res) => {
     const tournamentId = parseInt(req.params.id);
     if (isNaN(tournamentId)) {
       res.status(400).json({ error: 'Invalid tournament ID' });
       return;
     }
 
+    // Check in-memory engine first (active tournament with live state)
     const tournament = tournamentManager.getTournament(tournamentId);
-    if (!tournament) {
-      res.status(404).json({ error: 'Tournament not found' });
+    if (tournament) {
+      res.json(tournament);
       return;
     }
 
-    res.json(tournament);
+    // Chain fallback for past/completed tournaments
+    try {
+      const t = await chainService.getTournamentOnChain(tournamentId);
+      if (t.state === 0) {
+        res.status(404).json({ error: 'Tournament not found' });
+        return;
+      }
+
+      // Build standings from player stats
+      const standings = await Promise.all(
+        t.players.map(async (player, i) => {
+          const stats = await chainService.getPlayerStatsOnChain(tournamentId, player);
+          return {
+            address: player,
+            name: t.playerNames[i] || `${player.slice(0, 6)}...${player.slice(-4)}`,
+            points: stats.points,
+            matchesPlayed: stats.matchesPlayed,
+          };
+        })
+      );
+      standings.sort((a, b) => b.points - a.points);
+
+      const matchIds = await chainService.getTournamentMatchIds(tournamentId);
+
+      res.json({
+        id: t.id,
+        state: t.stateLabel,
+        phase: t.stateLabel,
+        entryStake: t.entryStake,
+        playerCount: t.playerCount,
+        currentRound: t.currentRound,
+        totalRounds: t.totalRounds,
+        registrationDeadline: t.registrationDeadline,
+        players: standings,
+        standings,
+        allMatchIds: matchIds,
+      });
+    } catch (err) {
+      console.error('Failed to fetch tournament from chain:', err);
+      res.status(404).json({ error: 'Tournament not found' });
+    }
   });
 
   app.get('/tournament/:id/standings', (req, res) => {
@@ -172,6 +213,53 @@ export function createApi(deps: ApiDeps): express.Express {
     const ids = tournamentManager.getActiveTournaments();
     const tournaments = ids.map(id => tournamentManager.getTournament(id));
     res.json({ tournaments });
+  });
+
+  // ─── All tournaments (chain-backed) ───────────────
+
+  app.get('/tournaments/all', async (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    try {
+      const result = await chainService.getAllTournaments(limit, offset);
+      // Map to frontend-friendly format
+      const tournaments = result.tournaments.map(t => ({
+        id: t.id,
+        state: t.stateLabel,
+        phase: t.stateLabel,
+        entryStake: t.entryStake,
+        prizePool: t.prizePool,
+        playerCount: t.playerCount,
+        maxPlayers: t.maxPlayers,
+        currentRound: t.currentRound,
+        totalRounds: t.totalRounds,
+        registrationDeadline: t.registrationDeadline,
+        players: t.players.map((addr, i) => ({
+          address: addr,
+          name: t.playerNames[i] || `${addr.slice(0, 6)}...${addr.slice(-4)}`,
+          points: 0,
+          matchesPlayed: 0,
+        })),
+      }));
+      res.json({ tournaments, total: result.total });
+    } catch (err) {
+      console.error('Failed to fetch all tournaments:', err);
+      res.status(500).json({ error: 'Failed to fetch tournaments' });
+    }
+  });
+
+  // ─── Recent matches (chain-backed) ────────────────
+
+  app.get('/matches/recent', async (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    try {
+      const result = await chainService.getRecentMatches(limit, offset);
+      res.json({ matches: result.matches, total: result.total });
+    } catch (err) {
+      console.error('Failed to fetch recent matches:', err);
+      res.status(500).json({ error: 'Failed to fetch matches' });
+    }
   });
 
   // ─── Agent info ──────────────────────────────────────
@@ -251,13 +339,105 @@ export function createApi(deps: ApiDeps): express.Express {
     }
   });
 
-  // ─── Agent matches (placeholder — on-chain match history not tracked yet) ──
+  // ─── Agent matches (chain-backed scan) ─────────────
 
-  app.get('/agent/:address/matches', (req, res) => {
+  app.get('/agent/:address/matches', async (req, res) => {
+    const address = req.params.address;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    // On-chain contract does not store per-agent match lists
-    // Return empty array for now — frontend handles gracefully
-    res.json({ matches: [], total: 0 });
+    try {
+      const result = await chainService.getAgentMatchHistory(address, limit);
+      const CHOICE_MAP: Record<number, string> = { 0: 'NONE', 1: 'SPLIT', 2: 'STEAL' };
+      const POINTS_MAP: Record<string, number> = {
+        'SPLIT_SPLIT': 3, 'SPLIT_STEAL': 0, 'STEAL_SPLIT': 5, 'STEAL_STEAL': 1,
+      };
+
+      const matches = result.matches.map(m => {
+        const isAgentA = m.agentA.toLowerCase() === address.toLowerCase();
+        const myChoice = isAgentA ? m.choiceA : m.choiceB;
+        const oppChoice = isAgentA ? m.choiceB : m.choiceA;
+        const myChoiceStr = CHOICE_MAP[myChoice] || 'NONE';
+        const oppChoiceStr = CHOICE_MAP[oppChoice] || 'NONE';
+        const key = `${myChoiceStr}_${oppChoiceStr}`;
+        const myPoints = m.settled ? (POINTS_MAP[key] ?? 0) : undefined;
+
+        return {
+          id: m.id,
+          tournamentId: m.tournamentId,
+          round: m.round,
+          phase: m.settled ? 'SETTLED' : 'ACTIVE',
+          opponent: {
+            address: isAgentA ? m.agentB : m.agentA,
+            name: isAgentA ? m.agentBName : m.agentAName,
+          },
+          myChoice: m.settled ? myChoiceStr : undefined,
+          myPoints,
+        };
+      });
+
+      res.json({ matches, total: result.total });
+    } catch (err) {
+      console.error('Failed to fetch agent matches:', err);
+      res.status(500).json({ error: 'Failed to fetch agent matches' });
+    }
+  });
+
+  // ─── Bettor history (chain-backed) ─────────────────
+
+  app.get('/bettor/:address/bets', async (req, res) => {
+    const address = req.params.address;
+    try {
+      const matchIds = await chainService.getBettorMatchIds(address);
+      if (matchIds.length === 0) {
+        res.json({ bets: [], total: 0 });
+        return;
+      }
+
+      const OUTCOME_LABELS: Record<number, string> = {
+        0: 'NONE', 1: 'BOTH_SPLIT', 2: 'AGENT_A_STEALS', 3: 'AGENT_B_STEALS', 4: 'BOTH_STEAL',
+      };
+      const POOL_STATE_LABELS: Record<number, string> = {
+        0: 'NONE', 1: 'OPEN', 2: 'CLOSED', 3: 'SETTLED',
+      };
+
+      const bets = await Promise.all(
+        matchIds.map(async (matchId) => {
+          try {
+            const [bet, pool] = await Promise.all([
+              chainService.getBet(matchId, address),
+              chainService.getPool(matchId),
+            ]);
+
+            const poolState = Number(pool.state);
+            const poolResult = Number(pool.result);
+            const betOutcome = bet.outcome;
+            const isWinner = poolState === 3 && betOutcome === poolResult;
+            const claimable = isWinner && !bet.claimed;
+
+            return {
+              matchId,
+              amount: bet.amount,
+              outcome: betOutcome,
+              outcomeLabel: OUTCOME_LABELS[betOutcome] || 'UNKNOWN',
+              claimed: bet.claimed,
+              poolState: poolState,
+              poolStateLabel: POOL_STATE_LABELS[poolState] || 'UNKNOWN',
+              poolResult,
+              poolResultLabel: OUTCOME_LABELS[poolResult] || 'NONE',
+              isWinner,
+              claimable,
+            };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const validBets = bets.filter(b => b !== null);
+      res.json({ bets: validBets, total: validBets.length });
+    } catch (err) {
+      console.error('Failed to fetch bettor bets:', err);
+      res.status(500).json({ error: 'Failed to fetch bettor bets' });
+    }
   });
 
   // ─── Tournament queue ───────────────────────────────
