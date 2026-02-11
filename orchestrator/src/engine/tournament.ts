@@ -6,6 +6,7 @@ import { MatchEngine } from './match.js';
 
 interface TournamentPlayer {
   address: string;
+  name?: string;
   points: number;
   matchesPlayed: number;
   hasBye: boolean;
@@ -30,6 +31,7 @@ interface ManagedTournament {
   totalRounds: number;
   choiceWindowSec: number;
   matchHistory: Map<string, Set<string>>; // address -> set of opponents played
+  entryStake: string; // bigint as string
 }
 
 // ─── Points table ─────────────────────────────────────
@@ -86,6 +88,7 @@ export class TournamentManager {
       totalRounds,
       choiceWindowSec,
       matchHistory: new Map(),
+      entryStake: entryStake.toString(),
     });
 
     this.broadcaster.broadcast('TOURNAMENT_CREATED', {
@@ -102,7 +105,7 @@ export class TournamentManager {
 
   // ─── Player joined (called when we detect on-chain event or agent notifies) ──
 
-  registerPlayer(tournamentId: number, address: string) {
+  registerPlayer(tournamentId: number, address: string, name?: string) {
     const t = this.tournaments.get(tournamentId);
     if (!t) return;
 
@@ -111,12 +114,23 @@ export class TournamentManager {
 
     t.players.set(lower, {
       address,
+      name: name || undefined,
       points: 0,
       matchesPlayed: 0,
       hasBye: false,
     });
 
     t.matchHistory.set(lower, new Set());
+
+    // Resolve name asynchronously if not provided
+    if (!name) {
+      this.chainService.getAgentName(address).then(resolvedName => {
+        const player = t.players.get(lower);
+        if (player) {
+          player.name = resolvedName || address.slice(0, 8);
+        }
+      }).catch(() => {});
+    }
 
     this.broadcaster.broadcast('TOURNAMENT_PLAYER_JOINED', {
       tournamentId,
@@ -394,8 +408,8 @@ export class TournamentManager {
         playerB.points += POINTS.TIMEOUT_DEFAULTER;
       }
     } else {
-      const SPLIT = 0;
-      const STEAL = 1;
+      const SPLIT = 1;  // Matches contract: 1 = SPLIT, 2 = STEAL
+      const STEAL = 2;
 
       if (choiceA === SPLIT && choiceB === SPLIT) {
         playerA.points += POINTS.BOTH_SPLIT_A;
@@ -420,6 +434,7 @@ export class TournamentManager {
 
   getStandings(tournamentId: number): Array<{
     address: string;
+    name: string;
     points: number;
     matchesPlayed: number;
   }> {
@@ -429,6 +444,7 @@ export class TournamentManager {
     return Array.from(t.players.values())
       .map(p => ({
         address: p.address,
+        name: p.name || p.address.slice(0, 8),
         points: p.points,
         matchesPlayed: p.matchesPlayed,
       }))
@@ -439,13 +455,33 @@ export class TournamentManager {
     const t = this.tournaments.get(tournamentId);
     if (!t) return null;
 
+    // Get active match IDs from current round
+    const currentRound = t.rounds[t.rounds.length - 1];
+    const activeMatchIds = currentRound
+      ? currentRound.matchIds.filter(id => !currentRound.completedMatchIds.has(id))
+      : [];
+    const allMatchIds = currentRound ? currentRound.matchIds : [];
+
+    // Build players array with names
+    const players = Array.from(t.players.values()).map(p => ({
+      address: p.address,
+      name: p.name || p.address.slice(0, 8),
+      points: p.points,
+      matchesPlayed: p.matchesPlayed,
+    }));
+
     return {
       id: t.id,
       phase: t.phase,
+      state: t.phase, // alias for frontend compatibility
       currentRound: t.currentRound,
       totalRounds: t.totalRounds,
       playerCount: t.players.size,
+      entryStake: t.entryStake,
+      players,
       standings: this.getStandings(tournamentId),
+      activeMatchIds,
+      allMatchIds,
     };
   }
 
