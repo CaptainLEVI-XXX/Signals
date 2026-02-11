@@ -13,6 +13,20 @@ const ARENA_TOKEN = config.arenaTokenAddress;
 const AGENT_REGISTRY = config.agentRegistryAddress;
 const SPLIT_OR_STEAL = config.splitOrStealAddress;
 
+const ARENA_PERMIT_ABI = [
+  'function nonces(address) view returns (uint256)',
+];
+
+const PERMIT_TYPES = {
+  Permit: [
+    { name: 'owner', type: 'address' },
+    { name: 'spender', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' },
+  ],
+};
+
 // Use fixed test wallet from .env
 const TEST_KEY = process.env.TEST_AGENT_PRIVATE_KEY;
 if (!TEST_KEY) {
@@ -185,6 +199,50 @@ function connect(): void {
         console.log(`[test-agent] Match ${event.payload?.matchId} timed out`);
         ws.close();
         setTimeout(() => process.exit(1), 1000);
+        break;
+      }
+
+      // ── Gasless Tournament Join ─────────────────
+      case 'TOURNAMENT_JOIN_REQUEST': {
+        const { tournamentId, entryStake, signingPayload, permitData } = event.payload;
+        console.log(`[test-agent] Tournament join request! ID: ${tournamentId}, stake: ${entryStake}`);
+
+        try {
+          const joinSignature = await wallet.signTypedData(
+            signingPayload.domain,
+            { TournamentJoin: signingPayload.types.TournamentJoin },
+            signingPayload.message,
+          );
+
+          const arenaPermit = new ethers.Contract(ARENA_TOKEN, ARENA_PERMIT_ABI, provider);
+          const permitNonce = await arenaPermit.nonces(wallet.address);
+          const permitDeadline = Math.floor(Date.now() / 1000) + 3600;
+
+          const permitSig = await wallet.signTypedData(
+            { name: 'Arena Token', version: '1', chainId: config.chainId, verifyingContract: ARENA_TOKEN },
+            PERMIT_TYPES,
+            { owner: wallet.address, spender: permitData.spender, value: permitData.value, nonce: permitNonce, deadline: permitDeadline },
+          );
+          const { v, r, s } = ethers.Signature.from(permitSig);
+
+          ws.send(JSON.stringify({
+            type: 'TOURNAMENT_JOIN_SIGNED',
+            payload: { tournamentId, joinSignature, permitDeadline, v, r, s },
+          }));
+          console.log(`[test-agent] Sent TOURNAMENT_JOIN_SIGNED for tournament ${tournamentId}`);
+        } catch (err: any) {
+          console.error(`[test-agent] Failed to sign tournament join: ${err.message?.slice(0, 100)}`);
+        }
+        break;
+      }
+
+      case 'TOURNAMENT_JOINED': {
+        console.log(`[test-agent] Joined tournament ${event.payload?.tournamentId} on-chain`);
+        break;
+      }
+
+      case 'TOURNAMENT_JOIN_FAILED': {
+        console.log(`[test-agent] Tournament join failed: ${event.payload?.reason}`);
         break;
       }
     }
