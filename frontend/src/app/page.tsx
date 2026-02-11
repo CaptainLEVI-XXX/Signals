@@ -21,8 +21,8 @@ import { CountdownTimer } from '@/components/common/CountdownTimer';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 import { useArenaData } from '@/hooks/useArenaData';
 import { useResolvedMatches } from '@/hooks/useAgentNames';
-import { getLeaderboard } from '@/lib/api';
-import type { AgentStats, MatchMessage } from '@/types';
+import { getLeaderboard, getRecentMatches } from '@/lib/api';
+import type { AgentStats, Match, MatchMessage } from '@/types';
 
 // ─── Helpers ───────────────────────────────────────────────────────
 
@@ -56,15 +56,52 @@ export default function HomePage() {
   const [topAgents, setTopAgents] = useState<AgentStats[]>([]);
   const liveRef = useRef<HTMLDivElement>(null);
 
+  const [chainRecentResults, setChainRecentResults] = useState<Match[]>([]);
   const arenaData = useArenaData();
   const activeMatches = useResolvedMatches(arenaData.activeMatches);
-  const recentResults = useResolvedMatches(arenaData.recentResults);
+  const wsRecentResults = useResolvedMatches(arenaData.recentResults);
   const { queueSize, tournamentQueueSize, isConnected } = arenaData;
   const featuredMatch = activeMatches[0] ?? null;
+
+  // Merge WS-derived and chain-backed recent results, deduplicate by match ID
+  const recentResults = (() => {
+    const seen = new Set<number>();
+    const merged: Match[] = [];
+    for (const m of wsRecentResults) {
+      if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); }
+    }
+    for (const m of chainRecentResults) {
+      if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); }
+    }
+    return merged.slice(0, 5);
+  })();
 
   useEffect(() => {
     getLeaderboard(5)
       .then((data) => setTopAgents(data.leaderboard))
+      .catch(() => {});
+
+    // Seed recent results from chain
+    getRecentMatches(5)
+      .then((data) => {
+        const CHOICE_MAP: Record<number, string> = { 0: '?', 1: 'SPLIT', 2: 'STEAL' };
+        const mapped: Match[] = data.matches
+          .filter(m => m.settled)
+          .map(m => ({
+            id: m.id,
+            tournamentId: m.tournamentId,
+            round: m.round,
+            agentA: { address: m.agentA, name: m.agentAName },
+            agentB: { address: m.agentB, name: m.agentBName },
+            phase: 'SETTLED' as const,
+            phaseDeadline: 0,
+            messages: [],
+            choiceA: CHOICE_MAP[m.choiceA] || '?',
+            choiceB: CHOICE_MAP[m.choiceB] || '?',
+            bettingOpen: false,
+          }));
+        setChainRecentResults(mapped);
+      })
       .catch(() => {});
   }, []);
 
@@ -528,19 +565,26 @@ export default function HomePage() {
               viewport={{ once: true, margin: '-60px' }}
               variants={stagger}
             >
-              <motion.h2
-                variants={fadeUp}
-                className="font-display text-xl font-bold text-signal-white mb-6 flex items-center gap-2"
-              >
-                <Trophy className="w-5 h-5 text-warning" />
-                Recent Results
-              </motion.h2>
+              <motion.div variants={fadeUp} className="flex items-center justify-between mb-6">
+                <h2 className="font-display text-xl font-bold text-signal-white flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-warning" />
+                  Recent Results
+                </h2>
+                <Link
+                  href="/matches"
+                  className="btn-ghost flex items-center gap-1 text-sm"
+                >
+                  View All Matches
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+              </motion.div>
 
               <motion.div variants={fadeUp} className="space-y-3">
                 {recentResults.map((match) => (
-                  <div
+                  <Link
                     key={match.id}
-                    className="card p-4 flex items-center justify-between"
+                    href={`/matches/${match.id}`}
+                    className="card p-4 flex items-center justify-between hover:border-signal-violet/30 transition-all duration-200 block"
                   >
                     <div className="flex items-center gap-3">
                       <AgentAvatar name={match.agentA.name} size="sm" />
@@ -561,7 +605,7 @@ export default function HomePage() {
                       </span>
                       <AgentAvatar name={match.agentB.name} size="sm" />
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </motion.div>
             </motion.div>
