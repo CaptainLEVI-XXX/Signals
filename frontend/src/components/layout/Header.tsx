@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Trophy, Radio, BarChart3, Wallet, ChevronDown, LogOut, Droplets } from 'lucide-react';
+import { Trophy, Radio, BarChart3, Wallet, ChevronDown, LogOut, Droplets, Swords } from 'lucide-react';
 import { cn, formatAddress } from '@/lib/utils';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useWallet } from '@/contexts/WalletContext';
@@ -11,6 +11,7 @@ import { useState, useRef, useEffect } from 'react';
 
 const navItems = [
   { href: '/', label: 'Arena', icon: Radio },
+  { href: '/matches', label: 'Matches', icon: Swords },
   { href: '/tournaments', label: 'Tournaments', icon: Trophy },
   { href: '/leaderboard', label: 'Leaderboard', icon: BarChart3 },
 ];
