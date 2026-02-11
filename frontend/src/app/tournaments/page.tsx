@@ -12,10 +12,11 @@ const filters: { label: string; value: TournamentState | 'all' }[] = [
   { label: 'Registration', value: 'REGISTRATION' },
   { label: 'Active', value: 'ACTIVE' },
   { label: 'Complete', value: 'COMPLETE' },
+  { label: 'Cancelled', value: 'CANCELLED' },
 ];
 
 export default function TournamentsPage() {
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [allTournaments, setAllTournaments] = useState<Tournament[]>([]);
   const [filter, setFilter] = useState<TournamentState | 'all'>('all');
   const [loading, setLoading] = useState(true);
 
@@ -23,12 +24,7 @@ export default function TournamentsPage() {
     async function fetchTournaments() {
       try {
         const res = await getTournaments();
-        const all = res.tournaments;
-        setTournaments(
-          filter === 'all'
-            ? all
-            : all.filter((t) => t.state === filter || t.phase === filter)
-        );
+        setAllTournaments(res.tournaments || []);
       } catch (err) {
         console.error('Failed to fetch tournaments:', err);
       } finally {
@@ -37,7 +33,11 @@ export default function TournamentsPage() {
     }
 
     fetchTournaments();
-  }, [filter]);
+  }, []);
+
+  const tournaments = filter === 'all'
+    ? allTournaments
+    : allTournaments.filter((t) => t.state === filter || t.phase === filter);
 
   return (
     <div className="min-h-screen grain py-8">
