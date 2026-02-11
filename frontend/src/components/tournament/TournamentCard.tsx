@@ -36,7 +36,7 @@ export function TournamentCard({ tournament, index = 0 }: TournamentCardProps) {
                 <PhaseBadge state={state} />
               </div>
               <p className="text-sm text-signal-text">
-                Entry: <span className="text-signal-mint">{formatTokenAmount(entryStake)} ARENA</span>
+                Entry: <span className="text-signal-mint">{formatTokenAmount(entryStake || '0')} ARENA</span>
               </p>
             </div>
 
@@ -67,7 +67,7 @@ export function TournamentCard({ tournament, index = 0 }: TournamentCardProps) {
             <div className="flex items-center gap-2 text-sm">
               <Trophy className="w-4 h-4 text-signal-mint" />
               <span className="text-signal-mint">
-                {formatTokenAmount(BigInt(entryStake) * BigInt(players.length))} ARENA
+                {formatTokenAmount(BigInt(entryStake || '0') * BigInt(players.length || 0))} ARENA
               </span>
             </div>
           </div>
