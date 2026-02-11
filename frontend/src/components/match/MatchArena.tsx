@@ -5,8 +5,11 @@ import { AgentAvatar } from '@/components/common/AgentAvatar';
 import { ChoiceCard } from '@/components/common/ChoiceCard';
 import { CountdownTimer } from '@/components/common/CountdownTimer';
 import { PhaseBadge } from '@/components/common/PhaseBadge';
+import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Match } from '@/types';
+
+const EXPLORER_URL = 'https://testnet.monadscan.com';
 
 interface MatchArenaProps {
   match: Match;
@@ -71,7 +74,7 @@ export function MatchArena({ match }: MatchArenaProps) {
                 avatarUrl={agentA.avatarUrl}
                 size="xl"
                 showRing={isSettled}
-                ringColor={choiceA === 'SPLIT' ? 'cooperate' : choiceA === 'STEAL' ? 'defect' : 'mint'}
+                ringColor={isSplit(choiceA) ? 'cooperate' : (choiceA === 'STEAL' || choiceA === 2) ? 'defect' : 'mint'}
               />
               <div className="text-center">
                 <h3 className="font-display text-2xl text-signal-white tracking-wide">
@@ -150,7 +153,7 @@ export function MatchArena({ match }: MatchArenaProps) {
                 avatarUrl={agentB.avatarUrl}
                 size="xl"
                 showRing={isSettled}
-                ringColor={choiceB === 'SPLIT' ? 'cooperate' : choiceB === 'STEAL' ? 'defect' : 'mint'}
+                ringColor={isSplit(choiceB) ? 'cooperate' : (choiceB === 'STEAL' || choiceB === 2) ? 'defect' : 'mint'}
               />
               <div className="text-center">
                 <h3 className="font-display text-2xl text-signal-white tracking-wide">
@@ -192,6 +195,25 @@ export function MatchArena({ match }: MatchArenaProps) {
             >
               <div className="p-4 text-center">
                 <ResultMessage choiceA={choiceA} choiceB={choiceB} agentA={agentA.name} agentB={agentB.name} />
+                {match.txHash && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="mt-3"
+                  >
+                    <a
+                      href={`${EXPLORER_URL}/tx/${match.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-signal-slate/50 border border-signal-slate hover:border-signal-violet/40 text-sm font-mono text-signal-light hover:text-signal-white transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      View Settlement on Explorer
+                      <span className="text-signal-text">{match.txHash.slice(0, 8)}...{match.txHash.slice(-6)}</span>
+                    </a>
+                  </motion.div>
+                )}
               </div>
             </motion.div>
           )}
@@ -199,6 +221,10 @@ export function MatchArena({ match }: MatchArenaProps) {
       </div>
     </div>
   );
+}
+
+function isSplit(c: Match['choiceA']): boolean {
+  return c === 1 || c === 'SPLIT';
 }
 
 function ResultMessage({
@@ -212,21 +238,24 @@ function ResultMessage({
   agentA: string;
   agentB: string;
 }) {
-  if (choiceA === 'SPLIT' && choiceB === 'SPLIT') {
+  const aSplit = isSplit(choiceA);
+  const bSplit = isSplit(choiceB);
+
+  if (aSplit && bSplit) {
     return (
       <p className="text-cooperate font-display text-xl tracking-wide">
         MUTUAL COOPERATION — Both agents honored their signals.
       </p>
     );
   }
-  if (choiceA === 'STEAL' && choiceB === 'STEAL') {
+  if (!aSplit && !bSplit) {
     return (
       <p className="text-defect font-display text-xl tracking-wide">
         MUTUAL DESTRUCTION — Both agents defected. No one wins.
       </p>
     );
   }
-  if (choiceA === 'STEAL') {
+  if (!aSplit) {
     return (
       <p className="text-signal-mint font-display text-xl tracking-wide">
         BETRAYAL — {agentA.toUpperCase()} defected against {agentB}.
