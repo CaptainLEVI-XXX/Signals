@@ -21,6 +21,9 @@ contract SplitOrSteal is BettingEngine, EIP712 {
     bytes32 public constant MATCH_CHOICE_TYPEHASH =
         keccak256("MatchChoice(uint256 matchId,uint8 choice,uint256 nonce)");
 
+    bytes32 public constant TOURNAMENT_JOIN_TYPEHASH =
+        keccak256("TournamentJoin(uint256 tournamentId,uint256 nonce)");
+
     enum Choice {
         NONE, // 0
         SPLIT, // 1
@@ -137,6 +140,10 @@ contract SplitOrSteal is BettingEngine, EIP712 {
 
     // Global agent stats (across all matches/tournaments)
     mapping(address => AgentStats) public agentStats;
+
+    // On-chain index mappings for O(1) history lookups
+    mapping(address => uint256[]) public agentMatchIds;
+    mapping(uint256 => uint256[]) public tournamentMatchIds;
 
     // ─── Events ─────────────────────────────────────────────────────────
 
@@ -371,6 +378,34 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         _joinTournamentInternal(tournamentId);
     }
 
+    /// @notice Join tournament on behalf of agent (gasless for agent)
+    /// @dev Operator submits: permit (token approval) + EIP-712 join signature
+    function joinTournamentFor(
+        uint256 tournamentId,
+        address agent,
+        uint256 nonce,
+        bytes memory joinSig,
+        uint256 permitDeadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyOperator lockUnlock {
+        // 1. Verify tournament join signature
+        if (nonce != choiceNonces[agent]) InvalidNonce.selector.revertWith();
+        bytes32 structHash = keccak256(abi.encode(TOURNAMENT_JOIN_TYPEHASH, tournamentId, nonce));
+        bytes32 digest = _hashTypedDataV4(structHash);
+        address recovered = ECDSA.recover(digest, joinSig);
+        if (recovered != agent) InvalidSignature.selector.revertWith();
+        choiceNonces[agent]++;
+
+        // 2. Execute permit (gasless token approval)
+        Tournament storage t = tournaments[tournamentId];
+        IERC20Permit(address(arenaToken)).permit(agent, address(this), t.entryStake, permitDeadline, v, r, s);
+
+        // 3. Join tournament on behalf of agent
+        _joinTournamentForAgent(tournamentId, agent);
+    }
+
     function startTournament(uint256 tournamentId) external onlyOperator {
         Tournament storage t = tournaments[tournamentId];
         if (t.state != TournamentState.REGISTRATION) TournamentNotInRegistration.selector.revertWith();
@@ -591,6 +626,22 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         return agentStats[agent];
     }
 
+    function getAgentMatchIds(address agent) external view returns (uint256[] memory) {
+        return agentMatchIds[agent];
+    }
+
+    function getAgentMatchCount(address agent) external view returns (uint256) {
+        return agentMatchIds[agent].length;
+    }
+
+    function getTournamentMatchIds(uint256 tournamentId) external view returns (uint256[] memory) {
+        return tournamentMatchIds[tournamentId];
+    }
+
+    function getTournamentMatchCount(uint256 tournamentId) external view returns (uint256) {
+        return tournamentMatchIds[tournamentId].length;
+    }
+
     /// @notice Get the EIP-712 domain separator
     function domainSeparator() external view returns (bytes32) {
         return _domainSeparatorV4();
@@ -632,6 +683,13 @@ contract SplitOrSteal is BettingEngine, EIP712 {
             deadline: matchDeadline
         });
 
+        // Populate index mappings for O(1) history lookups
+        agentMatchIds[agentA].push(matchId);
+        agentMatchIds[agentB].push(matchId);
+        if (tournamentId > 0) {
+            tournamentMatchIds[tournamentId].push(matchId);
+        }
+
         // Create betting pool (emergency window anchored to match deadline)
         _createPool(matchId, matchDeadline);
 
@@ -658,6 +716,25 @@ contract SplitOrSteal is BettingEngine, EIP712 {
         agentStats[msg.sender].tournamentsPlayed++;
 
         emit PlayerJoined(tournamentId, msg.sender, t.playerCount);
+    }
+
+    function _joinTournamentForAgent(uint256 tournamentId, address agent) internal {
+        Tournament storage t = tournaments[tournamentId];
+        if (t.state != TournamentState.REGISTRATION) TournamentNotInRegistration.selector.revertWith();
+        if (block.timestamp > t.registrationDeadline) TournamentNotInRegistration.selector.revertWith();
+        if (t.playerCount >= t.maxPlayers) TournamentFull.selector.revertWith();
+        if (hasJoined[tournamentId][agent]) AlreadyJoined.selector.revertWith();
+
+        arenaToken.safeTransferFrom(agent, address(this), t.entryStake);
+
+        hasJoined[tournamentId][agent] = true;
+        tournamentPlayers[tournamentId].push(agent);
+        t.playerCount++;
+        t.prizePool += t.entryStake;
+
+        agentStats[agent].tournamentsPlayed++;
+
+        emit PlayerJoined(tournamentId, agent, t.playerCount);
     }
 
     function _verifyChoiceSignature(
