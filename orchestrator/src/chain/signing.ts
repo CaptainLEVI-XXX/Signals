@@ -10,6 +10,13 @@ export const MATCH_CHOICE_TYPES = {
   ],
 };
 
+export const TOURNAMENT_JOIN_TYPES = {
+  TournamentJoin: [
+    { name: 'tournamentId', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+  ],
+};
+
 export function getDomain(contractAddress: string) {
   return {
     name: 'Signals',
@@ -44,6 +51,56 @@ export function buildSigningPayload(
       nonce: nonce.toString(),
     },
   };
+}
+
+// Build complete EIP-712 typed data for tournament join signing
+export function buildTournamentJoinPayload(
+  contractAddress: string,
+  tournamentId: number,
+  nonce: number
+) {
+  const domain = getDomain(contractAddress);
+  return {
+    types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
+      TournamentJoin: TOURNAMENT_JOIN_TYPES.TournamentJoin,
+    },
+    domain,
+    primaryType: 'TournamentJoin' as const,
+    message: {
+      tournamentId: tournamentId.toString(),
+      nonce: nonce.toString(),
+    },
+  };
+}
+
+// Validate tournament join signature locally
+export function validateTournamentJoinSignature(
+  contractAddress: string,
+  tournamentId: number,
+  nonce: number,
+  signature: string,
+  expectedSigner: string
+): boolean {
+  const domain = getDomain(contractAddress);
+  const message = { tournamentId, nonce };
+
+  try {
+    const recovered = ethers.verifyTypedData(
+      domain,
+      TOURNAMENT_JOIN_TYPES,
+      message,
+      signature
+    );
+    return recovered.toLowerCase() === expectedSigner.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 // Validate signature locally (before submitting to chain)
