@@ -24,6 +24,7 @@ export interface OrchestratorMatchState {
   agentBName: string;
   tournamentId: number;
   state: string;
+  phaseDeadline?: number;
   messages: Array<{ from: string; fromName: string; message: string; timestamp: number }>;
   choiceALocked: boolean;
   choiceBLocked: boolean;
@@ -151,8 +152,35 @@ export async function getBettingPool(matchId: number) {
   };
 }
 
+// Chain-backed match data type
+export interface ChainMatch {
+  id: number;
+  tournamentId: number;
+  round: number;
+  agentA: string;
+  agentB: string;
+  agentAName: string;
+  agentBName: string;
+  choiceA: number;
+  choiceB: number;
+  settled: boolean;
+  deadline: number;
+}
+
+export async function getAllTournaments(limit = 20, offset = 0) {
+  return fetchAPI<{ tournaments: Tournament[]; total: number }>(
+    `/tournaments/all?limit=${limit}&offset=${offset}`
+  );
+}
+
+export async function getRecentMatches(limit = 20, offset = 0) {
+  return fetchAPI<{ matches: ChainMatch[]; total: number }>(
+    `/matches/recent?limit=${limit}&offset=${offset}`
+  );
+}
+
 export async function getTournaments() {
-  return getActiveTournaments();
+  return getAllTournaments();
 }
 
 export async function getAgent(address: string) {
