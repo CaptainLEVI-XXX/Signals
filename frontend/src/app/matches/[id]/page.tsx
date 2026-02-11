@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { MatchArena } from '@/components/match/MatchArena';
@@ -15,6 +15,7 @@ import type { Match, BettingOdds } from '@/types';
 
 export default function MatchDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const id = Number(params.id);
 
   const [match, setMatch] = useState<Match | null>(null);
@@ -251,13 +252,13 @@ export default function MatchDetailPage() {
     <div className="min-h-screen grain py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Back link */}
-        <Link
-          href="/"
+        <button
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 text-signal-text hover:text-signal-light mb-6 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back to Arena
-        </Link>
+          Back
+        </button>
 
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-6">
