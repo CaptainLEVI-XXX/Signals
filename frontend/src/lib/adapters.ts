@@ -68,9 +68,11 @@ function adaptMessages(
 export function adaptOrchestratorMatch(m: OrchestratorMatchState): Match {
   const phase = mapPhase(m.state);
 
-  // Estimate deadline based on phase
+  // Use server-provided deadline if available, otherwise estimate
   let phaseDeadline: number;
-  if (phase === 'NEGOTIATING') {
+  if (m.phaseDeadline && m.phaseDeadline > Date.now()) {
+    phaseDeadline = m.phaseDeadline;
+  } else if (phase === 'NEGOTIATING') {
     phaseDeadline = Date.now() + NEGOTIATION_DURATION;
   } else if (phase === 'COMMITTING') {
     phaseDeadline = Date.now() + CHOICE_DURATION;
