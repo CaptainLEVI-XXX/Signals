@@ -47,7 +47,15 @@ async function main() {
     // Check if this is a tournament match
     const match = matchEngine.getMatch(matchId);
     if (match && match.tournamentId !== 0) {
-      // Tournament match -> let tournament manager handle it
+      // Update tournament points from match choices
+      const choices = match.getChoices();
+      if (choices.choiceA !== null && choices.choiceB !== null) {
+        tournamentManager.updatePoints(
+          match.tournamentId, agentA, agentB,
+          choices.choiceA, choices.choiceB
+        );
+      }
+      // Tournament match -> let tournament manager handle round tracking
       tournamentManager.onMatchComplete(matchId, agentA, agentB);
       return;
     }
