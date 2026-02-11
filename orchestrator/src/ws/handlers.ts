@@ -127,6 +127,32 @@ export function createMessageHandler(deps: HandlerDeps): MessageHandler {
         break;
       }
 
+      case 'TOURNAMENT_JOIN_SIGNED': {
+        const client = broadcaster.getClientByWs(ws);
+        if (!client?.address) {
+          broadcaster.sendTo(ws, 'ERROR', { message: 'Not authenticated' });
+          return;
+        }
+        const joinPayload = payload as {
+          tournamentId: number;
+          joinSignature: string;
+          permitDeadline: number;
+          v: number;
+          r: string;
+          s: string;
+        };
+        tournamentQueueManager.onJoinSigned(
+          client.address,
+          joinPayload.tournamentId,
+          joinPayload.joinSignature,
+          joinPayload.permitDeadline,
+          joinPayload.v,
+          joinPayload.r,
+          joinPayload.s
+        );
+        break;
+      }
+
       // ─── DISCONNECT ─────────────────────────
       case 'DISCONNECT': {
         const { address } = payload as { address: string };
