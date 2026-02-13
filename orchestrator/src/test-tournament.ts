@@ -12,7 +12,10 @@ import { config } from './config.js';
 // ─── Config ────────────────────────────────────────────
 
 const RPC = config.rpcUrl;
-const WS_URL = `ws://127.0.0.1:${config.port}/ws/agent`;
+const SERVER_URL = process.env.SERVER_URL || `http://127.0.0.1:${config.port}`;
+const WS_URL = process.env.SERVER_URL
+  ? `${SERVER_URL.replace(/^http/, 'ws')}/ws/agent`
+  : `ws://127.0.0.1:${config.port}/ws/agent`;
 const ARENA_TOKEN = config.arenaTokenAddress;
 const AGENT_REGISTRY = config.agentRegistryAddress;
 const SPLIT_OR_STEAL = config.splitOrStealAddress;

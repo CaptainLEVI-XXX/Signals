@@ -28,8 +28,11 @@ if (!HOUSEBOT_KEY) {
   process.exit(1);
 }
 
-const WS_URL = `ws://127.0.0.1:${config.port}/ws/agent`;
-const API_URL = `http://127.0.0.1:${config.port}`;
+const SERVER_URL = process.env.SERVER_URL || `http://127.0.0.1:${config.port}`;
+const WS_URL = process.env.SERVER_URL
+  ? `${SERVER_URL.replace(/^http/, 'ws')}/ws/agent`
+  : `ws://127.0.0.1:${config.port}/ws/agent`;
+const API_URL = SERVER_URL;
 const RPC = config.rpcUrl;
 const ARENA_TOKEN = config.arenaTokenAddress;
 const AGENT_REGISTRY = config.agentRegistryAddress;
