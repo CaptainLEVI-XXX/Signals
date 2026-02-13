@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
-import { config } from '../config.js';
+import { Server as HttpServer } from 'http';
 import { Broadcaster, ClientType } from '../broadcast/events.js';
 import { AuthManager } from './auth.js';
 import { MessageHandler } from './handlers.js';
@@ -11,15 +11,15 @@ export class WsServer {
   private authManager: AuthManager;
   private handleMessage: MessageHandler;
 
-  constructor(broadcaster: Broadcaster, authManager: AuthManager, handler: MessageHandler) {
+  constructor(broadcaster: Broadcaster, authManager: AuthManager, handler: MessageHandler, httpServer: HttpServer) {
     this.broadcaster = broadcaster;
     this.authManager = authManager;
     this.handleMessage = handler;
 
-    this.wss = new WebSocketServer({ port: config.wsPort });
+    this.wss = new WebSocketServer({ server: httpServer });
     this.wss.on('connection', (ws, req) => this.onConnection(ws, req));
 
-    console.log(`WebSocket server listening on port ${config.wsPort}`);
+    console.log('WebSocket server attached to HTTP server');
   }
 
   private onConnection(ws: WebSocket, req: IncomingMessage) {

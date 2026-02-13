@@ -8,7 +8,7 @@ import WebSocket from 'ws';
 import { config } from './config.js';
 
 const RPC = config.rpcUrl;
-const WS_URL = `ws://127.0.0.1:${config.wsPort}/ws/agent`;
+const WS_URL = `ws://127.0.0.1:${config.port}/ws/agent`;
 const ARENA_TOKEN = config.arenaTokenAddress;
 const AGENT_REGISTRY = config.agentRegistryAddress;
 const SPLIT_OR_STEAL = config.splitOrStealAddress;

@@ -2,9 +2,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  // Server
+  // Server (HTTP + WebSocket share the same port)
   port: parseInt(process.env.PORT || '3000'),
-  wsPort: parseInt(process.env.WS_PORT || '3001'),
 
   // Chain
   rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',

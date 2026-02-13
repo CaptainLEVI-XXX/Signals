@@ -1,3 +1,4 @@
+import { createServer } from 'http';
 import { config } from './config.js';
 import { ChainService } from './chain/service.js';
 import { Broadcaster } from './broadcast/events.js';
@@ -83,10 +84,6 @@ async function main() {
     tournamentQueueManager,
   });
 
-  // ─── Start WebSocket server ─────────────────────────
-
-  const _wsServer = new WsServer(broadcaster, authManager, messageHandler);
-
   // ─── Start REST API ─────────────────────────────────
 
   const api = createApi({
@@ -98,8 +95,14 @@ async function main() {
     broadcaster,
   });
 
-  api.listen(config.port, () => {
-    console.log(`REST API listening on port ${config.port}`);
+  // ─── Create shared HTTP server for both Express + WebSocket ──
+
+  const httpServer = createServer(api);
+
+  const _wsServer = new WsServer(broadcaster, authManager, messageHandler, httpServer);
+
+  httpServer.listen(config.port, () => {
+    console.log(`HTTP + WebSocket server listening on port ${config.port}`);
     console.log('');
     console.log('Ready. Waiting for agents...');
   });

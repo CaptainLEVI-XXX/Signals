@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import type { WSEvent, WSEventType } from '@/types';
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
+const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3000';
 
 type EventHandler = (event: WSEvent) => void;
 
