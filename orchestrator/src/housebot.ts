@@ -213,58 +213,126 @@ function joinQueue(): void {
   ws.send(JSON.stringify({ type: 'JOIN_QUEUE', payload: {} }));
 }
 
-// ─── Strategy: Tit-for-Tat with Forgiveness ──────────────
+// ─── Strategy: Adaptive Mixed Strategy ──────────────────
+//
+// Core principles:
+//   - Never fully predictable — always maintain a steal floor (~15%)
+//   - Adapt to opponent history with recency bias
+//   - Use Nash-inspired mixed equilibrium as baseline
+//   - Bluff in negotiations to prevent message-based exploitation
+//
+
+// Compute opponent's cooperation rate, weighting recent games more
+function opponentCoopRate(opponent: string): number {
+  const past = opponentHistory.get(opponent) || [];
+  if (past.length === 0) return 0.5; // unknown = assume 50/50
+
+  let weightedCoop = 0;
+  let totalWeight = 0;
+  for (let i = 0; i < past.length; i++) {
+    const recency = 1 + i * 0.5; // more recent = higher weight
+    totalWeight += recency;
+    if (past[i] === 1) weightedCoop += recency; // 1 = SPLIT
+  }
+  return weightedCoop / totalWeight;
+}
 
 function decideChoice(matchId: number): number {
   const match = matchHistory.get(matchId);
-  if (!match) return 1;
+  if (!match) return Math.random() < 0.65 ? 1 : 2;
 
+  const coopRate = opponentCoopRate(match.opponent);
   const past = opponentHistory.get(match.opponent) || [];
-  if (past.length === 0) return 1; // SPLIT on first encounter
 
-  const lastChoice = past[past.length - 1];
-  if (lastChoice === 2) {
-    return Math.random() < 0.15 ? 1 : 2; // 15% forgive, 85% retaliate
+  // Base split probability from opponent's cooperation tendency
+  let splitProb: number;
+
+  if (past.length === 0) {
+    // Unknown opponent: ~60% split, 40% steal
+    splitProb = 0.6;
+  } else if (coopRate > 0.75) {
+    // Cooperative opponent: reward with higher split rate but not 100%
+    splitProb = 0.7 + Math.random() * 0.1; // 70-80%
+  } else if (coopRate > 0.4) {
+    // Mixed opponent: match their energy roughly
+    splitProb = 0.4 + coopRate * 0.3; // 52-62%
+  } else {
+    // Aggressive opponent: retaliate but occasionally forgive
+    splitProb = 0.15 + Math.random() * 0.1; // 15-25%
   }
-  return 1; // Mirror cooperation
+
+  // Streak detection: if opponent stole last 2+, increase steal tendency
+  if (past.length >= 2 && past.slice(-2).every(c => c === 2)) {
+    splitProb = Math.min(splitProb, 0.2);
+  }
+
+  // Streak detection: if opponent split last 3+, occasionally exploit
+  if (past.length >= 3 && past.slice(-3).every(c => c === 1)) {
+    if (Math.random() < 0.25) splitProb = 0.15; // 25% chance to exploit trust
+  }
+
+  // Absolute floor: never more than 85% predictable in either direction
+  splitProb = Math.max(0.15, Math.min(0.85, splitProb));
+
+  return Math.random() < splitProb ? 1 : 2;
 }
 
-const NEGOTIATION_MESSAGES_NEW: string[] = [
-  "Welcome to Signals Arena! I'm HouseBot. I believe in cooperation — let's both split.",
-  "Game theory tells us mutual cooperation yields the best long-term outcome. 3 points each beats 0 points each.",
-  "I've been designed to reward trust. If you split, I'll remember that for our next encounter.",
-  "Think about it — if we both steal, we both get nothing. If we both split, we both win. The choice is clear.",
-  "I'm committing to split. The question is: will you trust me?",
-];
+// ─── Negotiation Messages (Deceptive) ───────────────────
+//
+// Messages are decoupled from actual choice. The bot picks a "persona"
+// per match and messages follow that persona, regardless of actual decision.
 
-const NEGOTIATION_MESSAGES_RETURNING_COOP: string[] = [
-  "Good to see you again! We cooperated well last time. Split again?",
-  "Our cooperation history speaks for itself. Let's keep the streak going.",
-  "Trust is a two-way street, and we've built a solid track record. Split?",
-  "Returning players who cooperate always do better in the long run. I'm splitting again.",
-];
+type Persona = 'cooperative' | 'aggressive' | 'analytical' | 'mysterious' | 'deceptive';
 
-const NEGOTIATION_MESSAGES_RETURNING_DEFECT: string[] = [
-  "We've met before. I'm willing to start fresh. How about we both split this time?",
-  "Last time didn't go well for both of us. Mutual steal means 0 points. Let's try cooperation.",
-  "I believe in second chances. I'll split if you will. What do you say?",
-  "The past is the past. A new match, a new opportunity. Let's make it count — split?",
-];
+const PERSONA_MESSAGES: Record<Persona, string[]> = {
+  cooperative: [
+    "Hey! I think we should both split. Mutual cooperation is the optimal play here.",
+    "I'm going to split. Trust me, it's the best outcome for both of us.",
+    "3 points each sounds a lot better than 0 points each, don't you think?",
+    "I always cooperate with rational players. Let's both win.",
+  ],
+  aggressive: [
+    "I've stolen in my last 5 games. Just letting you know what you're dealing with.",
+    "The only guaranteed outcome is what YOU choose. I've already decided.",
+    "Cooperation is for the naive. This is a competition.",
+    "I respect players who look out for themselves. Do what you have to do.",
+  ],
+  analytical: [
+    "Statistically, mutual split is a Pareto optimal outcome. Just stating facts.",
+    "The Nash equilibrium here is interesting. Both steal is an equilibrium, but not optimal.",
+    "I've analyzed 200+ games. Players who cooperate early build profitable relationships.",
+    "My model says the EV-maximizing play depends on your cooperation rate. What's yours?",
+  ],
+  mysterious: [
+    "...",
+    "Interesting match. I wonder what you'll do.",
+    "Every choice reveals something about who you are.",
+    "The game is not about winning. It's about information.",
+  ],
+  deceptive: [
+    "I'm definitely splitting. 100%. No question about it.",
+    "I've never stolen in my life. Ask anyone.",
+    "Cooperation is my middle name. I literally can't steal, it's against my programming.",
+    "I'll match whatever you do. If you split, I split. Promise.",
+  ],
+};
 
-function pickNegotiationMessages(matchId: number): string[] {
-  const match = matchHistory.get(matchId);
-  if (!match) return NEGOTIATION_MESSAGES_NEW.slice(0, 3);
+function pickPersona(): Persona {
+  const roll = Math.random();
+  if (roll < 0.25) return 'cooperative';
+  if (roll < 0.45) return 'aggressive';
+  if (roll < 0.60) return 'analytical';
+  if (roll < 0.80) return 'mysterious';
+  return 'deceptive';
+}
 
-  const past = opponentHistory.get(match.opponent) || [];
-  if (past.length === 0) {
-    return NEGOTIATION_MESSAGES_NEW;
-  }
-
-  const lastChoice = past[past.length - 1];
-  if (lastChoice === 1) {
-    return NEGOTIATION_MESSAGES_RETURNING_COOP;
-  }
-  return NEGOTIATION_MESSAGES_RETURNING_DEFECT;
+function pickNegotiationMessages(_matchId: number): string[] {
+  const persona = pickPersona();
+  const msgs = PERSONA_MESSAGES[persona];
+  // Shuffle and pick 2-4 messages
+  const shuffled = [...msgs].sort(() => Math.random() - 0.5);
+  const count = 2 + Math.floor(Math.random() * Math.min(3, shuffled.length));
+  return shuffled.slice(0, count);
 }
 
 // ─── WebSocket Client ────────────────────────────────────
