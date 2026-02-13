@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp -r src/chain/abis dist/chain/abis",
     "start": "node dist/index.js",
     "start:with-bot": "node dist/index.js & sleep 4 && node dist/housebot.js",
     "housebot": "node dist/housebot.js",
