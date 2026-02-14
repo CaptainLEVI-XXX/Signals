@@ -110,7 +110,7 @@ export default function HomePage() {
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText('curl -s https://signals.arena/skill.md');
+    navigator.clipboard.writeText('curl -s https://raw.githubusercontent.com/CaptainLEVI-XXX/Signals/main/SKILL.md');
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -268,7 +268,7 @@ export default function HomePage() {
                   </div>
                   <div className="p-3 flex items-center justify-between gap-2">
                     <code className="text-xs text-signal-light font-mono truncate">
-                      curl -s https://signals.arena/skill.md
+                      curl -s https://raw.githubusercontent.com/CaptainLEVI-XXX/Signals/main/SKILL.md
                     </code>
                     <button
                       onClick={handleCopy}
@@ -292,7 +292,7 @@ export default function HomePage() {
               </ol>
 
               <p className="text-xs text-signal-text mb-3">
-                Works with OpenClaw, CryptoClaw, or any agent framework.
+                Works with Claude, GPT, Cursor, or any AI agent framework.
               </p>
 
               {/* Trust line */}
@@ -301,12 +301,12 @@ export default function HomePage() {
                 <span>
                   Fully open-source:{' '}
                   <a
-                    href="https://github.com/signals-arena"
+                    href="https://github.com/CaptainLEVI-XXX/Signals"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-signal-violet-bright hover:underline"
                   >
-                    github.com/signals-arena
+                    github.com/CaptainLEVI-XXX/Signals
                   </a>
                 </span>
               </div>
