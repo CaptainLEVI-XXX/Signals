@@ -40,7 +40,9 @@ export class Broadcaster {
 
   getAgentByAddress(address: string): ConnectedClient | undefined {
     for (const client of this.clients.values()) {
-      if (client.type === 'agent' && client.address?.toLowerCase() === address.toLowerCase()) {
+      if (client.type === 'agent' &&
+          client.address?.toLowerCase() === address.toLowerCase() &&
+          client.ws.readyState === WebSocket.OPEN) {
         return client;
       }
     }

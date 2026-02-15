@@ -65,11 +65,11 @@ export class HttpSessionManager {
   private addressToToken: Map<string, string> = new Map();       // address → token
   private cleanupTimer: NodeJS.Timeout | null = null;
 
-  createSession(address: string, name: string, bridge: HttpAgentBridge): string {
-    // Invalidate old session from same address
+  createSession(address: string, name: string, bridge: HttpAgentBridge, broadcaster?: Broadcaster, queueManager?: QueueManager): string {
+    // Invalidate old session from same address (pass broadcaster to remove old bridge)
     const oldToken = this.addressToToken.get(address.toLowerCase());
     if (oldToken) {
-      this.destroySession(oldToken);
+      this.destroySession(oldToken, broadcaster, queueManager);
     }
 
     const token = this.generateToken();

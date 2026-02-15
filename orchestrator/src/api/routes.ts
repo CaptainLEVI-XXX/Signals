@@ -522,8 +522,8 @@ export function createApi(deps: ApiDeps): express.Express {
     broadcaster.addClient(bridge as any, 'agent');
     broadcaster.authenticateAgent(bridge as any, address, name);
 
-    // Create session
-    const token = httpSessionManager.createSession(address, name, bridge);
+    // Create session (pass broadcaster to clean up old bridges from same address)
+    const token = httpSessionManager.createSession(address, name, bridge, broadcaster, queueManager);
 
     console.log(`[HTTP] Agent authenticated: ${name} (${address})`);
 
