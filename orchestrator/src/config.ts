@@ -7,6 +7,7 @@ export const config = {
 
   // Chain
   rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',
+  fallbackRpcUrl: process.env.FALLBACK_RPC_URL || '',
   chainId: parseInt(process.env.CHAIN_ID || '10143'),
   operatorPrivateKey: process.env.OPERATOR_PRIVATE_KEY || '',
 

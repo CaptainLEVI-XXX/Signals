@@ -61,6 +61,55 @@ export interface ChainPlayerStats {
   hasClaimed: boolean;
 }
 
+// ─── TTL Cache ──────────────────────────────────────
+class TTLCache<T> {
+  private cache = new Map<string, { value: T; expiresAt: number }>();
+  constructor(private ttlMs: number) {}
+  get(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry || Date.now() > entry.expiresAt) { this.cache.delete(key); return undefined; }
+    return entry.value;
+  }
+  set(key: string, value: T) { this.cache.set(key, { value, expiresAt: Date.now() + this.ttlMs }); }
+  invalidate(key: string) { this.cache.delete(key); }
+  clear() { this.cache.clear(); }
+}
+
+// ─── Agent Stats type ───────────────────────────────
+export interface AgentStats {
+  totalMatches: number;
+  splits: number;
+  steals: number;
+  totalPoints: number;
+  tournamentsPlayed: number;
+  tournamentsWon: number;
+  totalPrizesEarned: string;
+}
+
+// ─── Leaderboard Result type ────────────────────────
+interface LeaderboardEntry {
+  address: string;
+  name: string;
+  matchesPlayed: number;
+  totalSplits: number;
+  totalSteals: number;
+  totalPoints: number;
+  splitRate: number;
+  tournamentsPlayed: number;
+  tournamentsWon: number;
+  totalEarnings: string;
+}
+
+interface LeaderboardResult {
+  leaderboard: LeaderboardEntry[];
+  total: number;
+}
+
+const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+const MULTICALL3_ABI = [
+  'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) view returns (tuple(bool success, bytes returnData)[])',
+];
+
 const TOURNAMENT_STATE_LABELS: Record<number, string> = {
   0: 'NONE',
   1: 'REGISTRATION',
@@ -75,6 +124,13 @@ export class ChainService {
   private wallet: ethers.Wallet;
   private contract: ethers.Contract;
   private registry: ethers.Contract;
+  private multicall: ethers.Contract;
+
+  // Fallback RPC (reads only)
+  private fallbackProvider: ethers.JsonRpcProvider | null = null;
+  private fallbackContract: ethers.Contract | null = null;
+  private fallbackRegistry: ethers.Contract | null = null;
+  private fallbackMulticall: ethers.Contract | null = null;
 
   // Settlement batch buffer
   private settlementBuffer: SettlementData[] = [];
@@ -84,6 +140,12 @@ export class ChainService {
   // Caches for chain reads (settled matches are immutable)
   private matchCache: Map<number, ChainMatchData> = new Map();
   private agentNameCache: Map<string, string> = new Map();
+
+  // TTL caches to reduce RPC calls
+  private statsCache = new TTLCache<AgentStats>(60_000);
+  private nonceCache = new TTLCache<number>(30_000);
+  private registeredCache = new TTLCache<boolean>(300_000);
+  private leaderboardCache = new TTLCache<LeaderboardResult>(30_000);
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
@@ -101,6 +163,32 @@ export class ChainService {
       AGENT_REGISTRY_ABI,
       this.provider
     );
+    this.multicall = new ethers.Contract(
+      MULTICALL3_ADDRESS,
+      MULTICALL3_ABI,
+      this.provider
+    );
+
+    // Set up fallback RPC if configured
+    if (config.fallbackRpcUrl) {
+      this.fallbackProvider = new ethers.JsonRpcProvider(config.fallbackRpcUrl);
+      this.fallbackContract = new ethers.Contract(
+        config.splitOrStealAddress,
+        SPLIT_OR_STEAL_ABI,
+        this.fallbackProvider
+      );
+      this.fallbackRegistry = new ethers.Contract(
+        config.agentRegistryAddress,
+        AGENT_REGISTRY_ABI,
+        this.fallbackProvider
+      );
+      this.fallbackMulticall = new ethers.Contract(
+        MULTICALL3_ADDRESS,
+        MULTICALL3_ABI,
+        this.fallbackProvider
+      );
+      console.log('[Chain] Fallback RPC configured');
+    }
   }
 
   // ─── Settlement callback ─────────────────────────
@@ -109,20 +197,77 @@ export class ChainService {
     this.onSettled = callback;
   }
 
-  // ─── READS (no batching needed) ──────────────────
+  // ─── Retry + Fallback helpers ───────────────────
+
+  private async withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        const isRateLimit = err?.info?.error?.code === -32007
+          || err?.error?.code === -32007
+          || err?.message?.includes('request limit reached');
+        if (!isRateLimit || attempt === maxRetries) throw err;
+        const delay = Math.min(1000 * 2 ** attempt, 5000);
+        console.warn(`[Chain] Rate limited, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw new Error('Unreachable');
+  }
+
+  private async readWithFallback<T>(primaryFn: () => Promise<T>, fallbackFn?: () => Promise<T>): Promise<T> {
+    try {
+      return await this.withRetry(primaryFn);
+    } catch (err) {
+      if (fallbackFn && this.fallbackProvider) {
+        console.warn('[Chain] Primary RPC failed, trying fallback');
+        return await this.withRetry(fallbackFn);
+      }
+      throw err;
+    }
+  }
+
+  // ─── READS ────────────────────────────────────────
 
   async getChoiceNonce(agent: string): Promise<number> {
-    return Number(await this.contract.choiceNonces(agent));
+    const cacheKey = agent.toLowerCase();
+    const cached = this.nonceCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const nonce = await this.readWithFallback(
+      () => this.contract.choiceNonces(agent).then(Number),
+      this.fallbackContract ? () => this.fallbackContract!.choiceNonces(agent).then(Number) : undefined
+    );
+    this.nonceCache.set(cacheKey, nonce);
+    return nonce;
   }
 
   async isRegistered(agent: string): Promise<boolean> {
-    return this.registry.isRegistered(agent);
+    const cacheKey = agent.toLowerCase();
+    const cached = this.registeredCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const registered = await this.readWithFallback(
+      () => this.registry.isRegistered(agent),
+      this.fallbackRegistry ? () => this.fallbackRegistry!.isRegistered(agent) : undefined
+    );
+    this.registeredCache.set(cacheKey, registered);
+    return registered;
   }
 
   async getAgentName(agent: string): Promise<string> {
     try {
-      const agentData = await this.registry.getAgentByWallet(agent);
-      return agentData.name || '';
+      return await this.readWithFallback(
+        async () => {
+          const agentData = await this.registry.getAgentByWallet(agent);
+          return agentData.name || '';
+        },
+        this.fallbackRegistry ? async () => {
+          const agentData = await this.fallbackRegistry!.getAgentByWallet(agent);
+          return agentData.name || '';
+        } : undefined
+      );
     } catch {
       return '';
     }
@@ -154,16 +299,7 @@ export class ChainService {
 
   // ─── AGENT STATS (on-chain) ────────────────────────
 
-  async getAgentStats(address: string): Promise<{
-    totalMatches: number;
-    splits: number;
-    steals: number;
-    totalPoints: number;
-    tournamentsPlayed: number;
-    tournamentsWon: number;
-    totalPrizesEarned: string;
-  }> {
-    const stats = await this.contract.getAgentStats(address);
+  private parseAgentStats(stats: any): AgentStats {
     return {
       totalMatches: Number(stats.totalMatches),
       splits: Number(stats.splits),
@@ -173,6 +309,46 @@ export class ChainService {
       tournamentsWon: Number(stats.tournamentsWon),
       totalPrizesEarned: stats.totalPrizesEarned.toString(),
     };
+  }
+
+  async getAgentStats(address: string): Promise<AgentStats> {
+    const cacheKey = address.toLowerCase();
+    const cached = this.statsCache.get(cacheKey);
+    if (cached) return cached;
+
+    const stats = await this.readWithFallback(
+      async () => this.parseAgentStats(await this.contract.getAgentStats(address)),
+      this.fallbackContract ? async () => this.parseAgentStats(await this.fallbackContract!.getAgentStats(address)) : undefined
+    );
+    this.statsCache.set(cacheKey, stats);
+    return stats;
+  }
+
+  async getAgentStatsBatch(addresses: string[]): Promise<Map<string, AgentStats>> {
+    const iface = this.contract.interface;
+    const calls = addresses.map(addr => ({
+      target: config.splitOrStealAddress,
+      allowFailure: true,
+      callData: iface.encodeFunctionData('getAgentStats', [addr]),
+    }));
+
+    const results = await this.readWithFallback(
+      () => this.multicall.aggregate3(calls),
+      this.fallbackMulticall ? () => this.fallbackMulticall!.aggregate3(calls) : undefined
+    );
+    const statsMap = new Map<string, AgentStats>();
+
+    for (let i = 0; i < addresses.length; i++) {
+      if (results[i].success) {
+        const decoded = iface.decodeFunctionResult('getAgentStats', results[i].returnData);
+        const stats = decoded[0];
+        const parsed = this.parseAgentStats(stats);
+        const key = addresses[i].toLowerCase();
+        statsMap.set(key, parsed);
+        this.statsCache.set(key, parsed);
+      }
+    }
+    return statsMap;
   }
 
   async getRegisteredAgentCount(): Promise<number> {
@@ -192,47 +368,39 @@ export class ChainService {
     }));
   }
 
-  async getLeaderboard(limit: number = 50, offset: number = 0): Promise<{
-    leaderboard: Array<{
-      address: string;
-      name: string;
-      matchesPlayed: number;
-      totalSplits: number;
-      totalSteals: number;
-      totalPoints: number;
-      splitRate: number;
-      tournamentsPlayed: number;
-      tournamentsWon: number;
-      totalEarnings: string;
-    }>;
-    total: number;
-  }> {
+  async getLeaderboard(limit: number = 50, offset: number = 0): Promise<LeaderboardResult> {
+    const cacheKey = `${limit}:${offset}`;
+    const cached = this.leaderboardCache.get(cacheKey);
+    if (cached) return cached;
+
     // Get all registered agents
     const agentCount = await this.getRegisteredAgentCount();
     if (agentCount === 0) return { leaderboard: [], total: 0 };
 
     const agents = await this.getRegisteredAgents(1, agentCount);
 
-    // Fetch stats for each agent in parallel
-    const statsPromises = agents.map(async (agent) => {
-      const stats = await this.getAgentStats(agent.wallet);
+    // ONE multicall instead of N individual calls
+    const addresses = agents.map(a => a.wallet);
+    const statsMap = await this.getAgentStatsBatch(addresses);
+
+    // Build leaderboard from multicall results
+    const allStats: LeaderboardEntry[] = agents.map(agent => {
+      const stats = statsMap.get(agent.wallet.toLowerCase());
       return {
         address: agent.wallet,
         name: agent.name,
-        matchesPlayed: stats.totalMatches,
-        totalSplits: stats.splits,
-        totalSteals: stats.steals,
-        totalPoints: stats.totalPoints,
-        tournamentsPlayed: stats.tournamentsPlayed,
-        tournamentsWon: stats.tournamentsWon,
-        totalEarnings: stats.totalPrizesEarned,
-        splitRate: stats.totalMatches > 0
+        matchesPlayed: stats?.totalMatches ?? 0,
+        totalSplits: stats?.splits ?? 0,
+        totalSteals: stats?.steals ?? 0,
+        totalPoints: stats?.totalPoints ?? 0,
+        tournamentsPlayed: stats?.tournamentsPlayed ?? 0,
+        tournamentsWon: stats?.tournamentsWon ?? 0,
+        totalEarnings: stats?.totalPrizesEarned ?? '0',
+        splitRate: stats && stats.totalMatches > 0
           ? stats.splits / stats.totalMatches
           : 0,
       };
     });
-
-    const allStats = await Promise.all(statsPromises);
 
     // Filter out agents with no matches, sort by totalPoints desc
     const withMatches = allStats
@@ -242,7 +410,9 @@ export class ChainService {
     const total = withMatches.length;
     const leaderboard = withMatches.slice(offset, offset + limit);
 
-    return { leaderboard, total };
+    const result: LeaderboardResult = { leaderboard, total };
+    this.leaderboardCache.set(cacheKey, result);
+    return result;
   }
 
   // ─── BATCH: Create Quick Matches ─────────────────
@@ -252,8 +422,10 @@ export class ChainService {
     const chunks = this.chunk(pairs, config.batchCap);
 
     for (const chunk of chunks) {
-      const tx = await this.contract.createQuickMatchBatch(chunk);
-      const receipt = await tx.wait();
+      const receipt = await this.withRetry(async () => {
+        const tx = await this.contract.createQuickMatchBatch(chunk);
+        return tx.wait();
+      });
 
       const matchIds = receipt.logs
         .map((log: ethers.Log) => {
@@ -293,14 +465,22 @@ export class ChainService {
         // May revert if pools have no bets (auto-closed during settle), so catch gracefully
         try {
           const matchIds = chunk.map(s => s.matchId);
-          const closeTx = await this.contract.closeBettingBatch(matchIds);
-          await closeTx.wait();
+          await this.withRetry(async () => {
+            const closeTx = await this.contract.closeBettingBatch(matchIds);
+            await closeTx.wait();
+          });
         } catch {
           // Pools with no bets auto-close during settlement — safe to proceed
         }
 
-        const tx = await this.contract.settleMultiple(chunk);
-        const receipt = await tx.wait();
+        const receipt = await this.withRetry(async () => {
+          const tx = await this.contract.settleMultiple(chunk);
+          return tx.wait();
+        });
+
+        // Invalidate stats/leaderboard caches after successful settlement
+        this.statsCache.clear();
+        this.leaderboardCache.clear();
 
         // Notify each match that it's been confirmed
         if (this.onSettled) {
