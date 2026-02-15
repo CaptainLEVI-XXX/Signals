@@ -570,6 +570,16 @@ export function createApi(deps: ApiDeps): express.Express {
     res.json({ success: true });
   });
 
+  // ─── Disconnect: Destroy session entirely ────────────────
+
+  app.post('/agent/disconnect', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    const token = req.headers.authorization?.replace('Bearer ', '') || '';
+    console.log(`[HTTP] Agent disconnecting: ${session.name} (${session.address})`);
+    httpSessionManager.destroySession(token, broadcaster, queueManager);
+    res.json({ success: true });
+  });
+
   // ─── Match: Send negotiation message ───────────────────
 
   app.post('/match/:matchId/message', requireHttpAuth, (req, res) => {
