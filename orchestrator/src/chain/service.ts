@@ -122,6 +122,7 @@ const TOURNAMENT_STATE_LABELS: Record<number, string> = {
 export class ChainService {
   private provider: ethers.JsonRpcProvider;
   private wallet: ethers.Wallet;
+  private nonceManager: ethers.NonceManager;
   private contract: ethers.Contract;
   private registry: ethers.Contract;
   private multicall: ethers.Contract;
@@ -152,7 +153,8 @@ export class ChainService {
     const rawWallet = new ethers.Wallet(config.operatorPrivateKey, this.provider);
     // NonceManager serializes nonce assignment to prevent collisions
     // when multiple concurrent transactions are sent from the same wallet
-    this.wallet = new ethers.NonceManager(rawWallet) as unknown as ethers.Wallet;
+    this.nonceManager = new ethers.NonceManager(rawWallet);
+    this.wallet = this.nonceManager as unknown as ethers.Wallet;
     this.contract = new ethers.Contract(
       config.splitOrStealAddress,
       SPLIT_OR_STEAL_ABI,
@@ -207,6 +209,18 @@ export class ChainService {
         const isRateLimit = err?.info?.error?.code === -32007
           || err?.error?.code === -32007
           || err?.message?.includes('request limit reached');
+        const isNonceError = err?.code === 'NONCE_EXPIRED'
+          || err?.info?.error?.message?.includes('nonce too low')
+          || err?.message?.includes('nonce has already been used');
+
+        if (isNonceError && attempt < maxRetries) {
+          console.warn(`[Chain] Nonce error, resetting NonceManager and retrying (${attempt + 1}/${maxRetries})`);
+          this.nonceManager.reset();
+          const delay = Math.min(500 * 2 ** attempt, 3000);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+
         if (!isRateLimit || attempt === maxRetries) throw err;
         const delay = Math.min(1000 * 2 ** attempt, 5000);
         console.warn(`[Chain] Rate limited, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
