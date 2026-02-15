@@ -42,7 +42,25 @@ async function main() {
     broadcaster, chainService, tournamentManager, matchEngine, queueManager
   );
 
+  // ─── Initialize HTTP agent sessions ────────────────
+
+  const httpSessionManager = new HttpSessionManager();
+  httpSessionManager.startCleanup(broadcaster, queueManager);
+
   // ─── Wire callbacks ────────────────────────────────
+
+  // Helper: check if agent should be requeued or is a zombie
+  function shouldRequeue(address: string): boolean {
+    if (httpSessionManager.hasSession(address)) {
+      // HTTP agent — only requeue if actively polling
+      if (!httpSessionManager.isAgentActive(address)) {
+        console.log(`[Match] Destroying zombie HTTP session for ${address}`);
+        httpSessionManager.destroyByAddress(address, broadcaster, queueManager);
+        return false;
+      }
+    }
+    return true;
+  }
 
   // When a match completes, re-queue connected agents for quick matches
   matchEngine.setOnMatchComplete((matchId, agentA, agentB) => {
@@ -62,14 +80,14 @@ async function main() {
       return;
     }
 
-    // Quick match -> re-queue agents if still connected
+    // Quick match -> re-queue agents if still connected AND actively polling
     const wsA = broadcaster.getAgentWs(agentA);
     const wsB = broadcaster.getAgentWs(agentB);
 
-    if (wsA) {
+    if (wsA && shouldRequeue(agentA)) {
       queueManager.addToQueue({ address: agentA, ws: wsA });
     }
-    if (wsB) {
+    if (wsB && shouldRequeue(agentB)) {
       queueManager.addToQueue({ address: agentB, ws: wsB });
     }
   });
@@ -84,11 +102,6 @@ async function main() {
     matchEngine,
     tournamentQueueManager,
   });
-
-  // ─── Initialize HTTP agent sessions ────────────────
-
-  const httpSessionManager = new HttpSessionManager();
-  httpSessionManager.startCleanup(broadcaster, queueManager);
 
   // ─── Start REST API ─────────────────────────────────
 

@@ -127,6 +127,28 @@ export class HttpSessionManager {
     }, CLEANUP_INTERVAL_MS);
   }
 
+  // Check if an HTTP agent has polled recently (within threshold)
+  isAgentActive(address: string, thresholdMs = 60_000): boolean {
+    const token = this.addressToToken.get(address.toLowerCase());
+    if (!token) return false; // No HTTP session — not an HTTP agent
+    const session = this.sessions.get(token);
+    if (!session) return false;
+    return (Date.now() - session.lastActivity) < thresholdMs;
+  }
+
+  // Check if this address has an HTTP session (vs real WebSocket)
+  hasSession(address: string): boolean {
+    return this.addressToToken.has(address.toLowerCase());
+  }
+
+  // Destroy session by address (used for zombie cleanup)
+  destroyByAddress(address: string, broadcaster?: Broadcaster, queueManager?: QueueManager): void {
+    const token = this.addressToToken.get(address.toLowerCase());
+    if (token) {
+      this.destroySession(token, broadcaster, queueManager);
+    }
+  }
+
   stopCleanup(): void {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
