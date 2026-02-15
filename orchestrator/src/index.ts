@@ -10,6 +10,7 @@ import { QueueManager } from './engine/queue.js';
 import { TournamentManager } from './engine/tournament.js';
 import { TournamentQueueManager } from './engine/tournament-queue.js';
 import { createApi } from './api/routes.js';
+import { HttpSessionManager } from './api/http-agent.js';
 
 async function main() {
   console.log('=== Signals Orchestrator ===');
@@ -84,6 +85,11 @@ async function main() {
     tournamentQueueManager,
   });
 
+  // ─── Initialize HTTP agent sessions ────────────────
+
+  const httpSessionManager = new HttpSessionManager();
+  httpSessionManager.startCleanup(broadcaster, queueManager);
+
   // ─── Start REST API ─────────────────────────────────
 
   const api = createApi({
@@ -93,6 +99,8 @@ async function main() {
     tournamentManager,
     tournamentQueueManager,
     broadcaster,
+    authManager,
+    httpSessionManager,
   });
 
   // ─── Create shared HTTP server for both Express + WebSocket ──

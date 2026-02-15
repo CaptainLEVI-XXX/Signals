@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { config } from '../config.js';
 import { ChainService } from '../chain/service.js';
@@ -7,6 +7,8 @@ import { QueueManager } from '../engine/queue.js';
 import { TournamentManager } from '../engine/tournament.js';
 import { TournamentQueueManager } from '../engine/tournament-queue.js';
 import { Broadcaster } from '../broadcast/events.js';
+import { AuthManager } from '../ws/auth.js';
+import { HttpAgentBridge, HttpSessionManager } from './http-agent.js';
 
 export interface ApiDeps {
   chainService: ChainService;
@@ -15,10 +17,12 @@ export interface ApiDeps {
   tournamentManager: TournamentManager;
   tournamentQueueManager: TournamentQueueManager;
   broadcaster: Broadcaster;
+  authManager: AuthManager;
+  httpSessionManager: HttpSessionManager;
 }
 
 export function createApi(deps: ApiDeps): express.Express {
-  const { chainService, matchEngine, queueManager, tournamentManager, tournamentQueueManager, broadcaster } = deps;
+  const { chainService, matchEngine, queueManager, tournamentManager, tournamentQueueManager, broadcaster, authManager, httpSessionManager } = deps;
 
   const app = express();
   app.use(cors());
@@ -447,6 +451,170 @@ export function createApi(deps: ApiDeps): express.Express {
       size: tournamentQueueManager.getQueueSize(),
       agents: tournamentQueueManager.getQueuedAddresses(),
     });
+  });
+
+  // ═══════════════════════════════════════════════════════
+  // ─── HTTP Agent API ────────────────────────────────────
+  // ═══════════════════════════════════════════════════════
+
+  // Auth middleware for HTTP agent endpoints
+  function requireHttpAuth(req: Request, res: Response, next: NextFunction) {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) {
+      res.status(401).json({ error: 'Missing Authorization header' });
+      return;
+    }
+    const session = httpSessionManager.getSession(token);
+    if (!session) {
+      res.status(401).json({ error: 'Invalid or expired session' });
+      return;
+    }
+    httpSessionManager.touchSession(token);
+    (req as any).agentSession = session;
+    next();
+  }
+
+  // ─── Auth: Get challenge ───────────────────────────────
+
+  app.post('/agent/auth/challenge', (_req, res) => {
+    const challenge = authManager.generateChallenge();
+    res.json(challenge);
+  });
+
+  // ─── Auth: Verify signature ────────────────────────────
+
+  app.post('/agent/auth/verify', async (req, res) => {
+    const { address, signature, challengeId } = req.body;
+
+    if (!address || !signature || !challengeId) {
+      res.status(400).json({ error: 'Missing address, signature, or challengeId' });
+      return;
+    }
+
+    const result = authManager.verifyChallenge(challengeId, address, signature);
+    if (!result.valid) {
+      res.status(401).json({ error: result.reason });
+      return;
+    }
+
+    // Check on-chain registration
+    try {
+      const registered = await chainService.isRegistered(address);
+      if (!registered) {
+        res.status(403).json({ error: 'Agent not registered on AgentRegistry' });
+        return;
+      }
+    } catch {
+      res.status(500).json({ error: 'Failed to check registration' });
+      return;
+    }
+
+    // Get agent name
+    let name: string;
+    try {
+      name = await chainService.getAgentName(address) || `${address.slice(0, 6)}...${address.slice(-4)}`;
+    } catch {
+      name = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    }
+
+    // Create bridge and register with broadcaster
+    const bridge = new HttpAgentBridge();
+    broadcaster.addClient(bridge as any, 'agent');
+    broadcaster.authenticateAgent(bridge as any, address, name);
+
+    // Create session
+    const token = httpSessionManager.createSession(address, name, bridge);
+
+    console.log(`[HTTP] Agent authenticated: ${name} (${address})`);
+
+    res.json({ token, address, name });
+  });
+
+  // ─── Events: Long-poll ─────────────────────────────────
+
+  app.get('/agent/events', requireHttpAuth, async (req, res) => {
+    const session = (req as any).agentSession;
+    const timeout = Math.min(parseInt(req.query.timeout as string) || 30000, 60000);
+
+    const events = await session.bridge.pollEvents(timeout);
+    res.json(events);
+  });
+
+  // ─── Status ────────────────────────────────────────────
+
+  app.get('/agent/status', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    const address = session.address;
+
+    res.json({
+      address,
+      name: session.name,
+      inQueue: queueManager.isInQueue(address),
+      activeMatch: matchEngine.getActiveMatch(address),
+    });
+  });
+
+  // ─── Queue: Join ───────────────────────────────────────
+
+  app.post('/agent/queue/join', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    queueManager.addToQueue({ address: session.address, ws: session.bridge as any });
+    res.json({ success: true });
+  });
+
+  // ─── Queue: Leave ──────────────────────────────────────
+
+  app.post('/agent/queue/leave', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    queueManager.removeFromQueue(session.address);
+    res.json({ success: true });
+  });
+
+  // ─── Match: Send negotiation message ───────────────────
+
+  app.post('/match/:matchId/message', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    const matchId = parseInt(req.params.matchId as string);
+    const { message } = req.body;
+
+    if (isNaN(matchId)) {
+      res.status(400).json({ error: 'Invalid match ID' });
+      return;
+    }
+
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ error: 'Missing or invalid message' });
+      return;
+    }
+
+    const sent = matchEngine.onNegotiationMessage(matchId, session.address, message);
+    if (!sent) {
+      res.status(404).json({ error: 'Match not found or not in negotiation phase' });
+      return;
+    }
+
+    res.json({ success: true });
+  });
+
+  // ─── Match: Submit choice ──────────────────────────────
+
+  app.post('/match/:matchId/choice', requireHttpAuth, (req, res) => {
+    const session = (req as any).agentSession;
+    const matchId = parseInt(req.params.matchId as string);
+    const { choice, signature } = req.body;
+
+    if (isNaN(matchId)) {
+      res.status(400).json({ error: 'Invalid match ID' });
+      return;
+    }
+
+    if (!choice || !signature) {
+      res.status(400).json({ error: 'Missing choice or signature' });
+      return;
+    }
+
+    const result = matchEngine.onChoiceSubmitted(matchId, session.address, choice, signature);
+    res.json(result);
   });
 
   return app;
