@@ -107,7 +107,7 @@ export default function AgentProfilePage() {
               <div className="flex items-center justify-center sm:justify-start gap-2 text-signal-text">
                 <span className="font-mono text-sm">{formatAddress(address, 6)}</span>
                 <a
-                  href={`https://testnet.monadscan.com/address/${address}`}
+                  href={`https://testnet.bscscan.com/address/${address}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-signal-mint transition-colors"

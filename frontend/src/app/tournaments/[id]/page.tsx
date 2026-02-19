@@ -336,7 +336,7 @@ export default function TournamentDetailPage() {
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className="w-8 h-8 border-2 border-signal-violet border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-signal-gold border-t-transparent rounded-full animate-spin" />
         <p className="text-signal-text font-mono text-sm">Loading tournament...</p>
       </div>
     </div>
@@ -382,8 +382,8 @@ export default function TournamentDetailPage() {
               <p className="text-xs text-signal-text font-mono uppercase tracking-wider">Round</p>
             </div>
             <div className="text-center">
-              <Trophy className="w-5 h-5 text-signal-violet-bright mx-auto mb-2" />
-              <p className="text-2xl font-display text-signal-violet-bright">{formatTokenAmount(pool)}</p>
+              <Trophy className="w-5 h-5 text-signal-gold-bright mx-auto mb-2" />
+              <p className="text-2xl font-display text-signal-gold-bright">{formatTokenAmount(pool)}</p>
               <p className="text-xs text-signal-text font-mono uppercase tracking-wider">Prize Pool</p>
             </div>
             <div className="text-center">
@@ -404,7 +404,7 @@ export default function TournamentDetailPage() {
         {active && liveMatches.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-2 h-2 rounded-full bg-signal-violet-bright animate-pulse" />
+              <div className="w-2 h-2 rounded-full bg-signal-gold-bright animate-pulse" />
               <h2 className="font-display text-xl text-signal-white tracking-wide uppercase">
                 Round {tournament.currentRound} &mdash; Live Matches
               </h2>
@@ -430,7 +430,7 @@ export default function TournamentDetailPage() {
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}
-                    className={cn('card p-4 transition-all duration-200', !done && 'border-signal-violet/20 hover:border-signal-violet/40')}
+                    className={cn('card p-4 transition-all duration-200', !done && 'border-signal-gold/20 hover:border-signal-gold/40')}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -471,12 +471,12 @@ export default function TournamentDetailPage() {
                       </div>
                     )}
                     <div className="mt-3 pt-3 border-t border-signal-slate/50 flex items-center justify-between">
-                      <Link href={'/matches/' + match.id} className="inline-flex items-center gap-1.5 text-xs font-medium text-signal-violet-bright hover:text-signal-purple-glow transition-colors">
+                      <Link href={'/matches/' + match.id} className="inline-flex items-center gap-1.5 text-xs font-medium text-signal-gold-bright hover:text-signal-gold-glow transition-colors">
                         <Eye className="w-3.5 h-3.5" /> Watch <ArrowRight className="w-3 h-3" />
                       </Link>
                       {done && match.txHash && (
                         <a
-                          href={`https://testnet.monadscan.com/tx/${match.txHash}`}
+                          href={`https://testnet.bscscan.com/tx/${match.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs font-mono text-signal-text hover:text-signal-light transition-colors"

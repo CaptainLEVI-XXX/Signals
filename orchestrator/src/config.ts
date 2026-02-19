@@ -6,9 +6,9 @@ export const config = {
   port: parseInt(process.env.PORT || '3000'),
 
   // Chain
-  rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',
+  rpcUrl: process.env.RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/',
   fallbackRpcUrl: process.env.FALLBACK_RPC_URL || '',
-  chainId: parseInt(process.env.CHAIN_ID || '10143'),
+  chainId: parseInt(process.env.CHAIN_ID || '97'),
   operatorPrivateKey: process.env.OPERATOR_PRIVATE_KEY || '',
 
   // Contract addresses

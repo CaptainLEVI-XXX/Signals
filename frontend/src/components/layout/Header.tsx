@@ -96,8 +96,8 @@ export function Header() {
             {/* Logo */}
             <Link href="/" className="flex items-center gap-3 group">
               <div className="relative">
-                <Radio className="w-8 h-8 text-signal-violet group-hover:text-signal-violet-bright transition-colors" />
-                <div className="absolute inset-0 bg-signal-violet/20 blur-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+                <Radio className="w-8 h-8 text-signal-gold group-hover:text-signal-gold-bright transition-colors" />
+                <div className="absolute inset-0 bg-signal-gold/20 blur-lg rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <div className="hidden sm:block">
                 <div className="flex items-center gap-2">
@@ -107,7 +107,7 @@ export function Header() {
                   <span className="badge-beta">Beta</span>
                 </div>
                 <p className="text-[10px] text-signal-text font-mono uppercase tracking-widest -mt-0.5">
-                  Monad Testnet
+                  BSC Testnet
                 </p>
               </div>
             </Link>
@@ -126,7 +126,7 @@ export function Header() {
                     className={cn(
                       'relative px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-200',
                       isActive
-                        ? 'text-signal-violet-bright'
+                        ? 'text-signal-gold-bright'
                         : 'text-signal-text hover:text-signal-light hover:bg-signal-slate/50'
                     )}
                   >
@@ -137,7 +137,7 @@ export function Header() {
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator"
-                        className="absolute inset-0 bg-signal-violet/15 border border-signal-violet/30 rounded-lg -z-10"
+                        className="absolute inset-0 bg-signal-gold/15 border border-signal-gold/30 rounded-lg -z-10"
                         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                       />
                     )}
@@ -166,8 +166,8 @@ export function Header() {
                   disabled={faucetLoading}
                   className={cn(
                     'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-200',
-                    'bg-signal-violet/15 border border-signal-violet/30 text-signal-violet-bright',
-                    'hover:bg-signal-violet/25 hover:border-signal-violet/50',
+                    'bg-signal-gold/15 border border-signal-gold/30 text-signal-gold-bright',
+                    'hover:bg-signal-gold/25 hover:border-signal-gold/50',
                     faucetLoading && 'opacity-50 cursor-not-allowed'
                   )}
                 >
@@ -183,9 +183,9 @@ export function Header() {
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setShowDropdown(!showDropdown)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-signal-graphite border border-signal-slate hover:border-signal-violet/50 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-signal-graphite border border-signal-slate hover:border-signal-gold/50 transition-colors"
                   >
-                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-signal-violet to-signal-purple-glow" />
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-signal-gold to-signal-gold-glow" />
                     <span className="text-sm font-mono text-signal-light">
                       {formatAddress(address)}
                     </span>

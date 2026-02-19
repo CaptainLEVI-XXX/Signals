@@ -9,13 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Signals brand colors - Mission Control Purple
+        // Signals brand colors - BSC Gold
         signal: {
-          violet: '#8B5CF6',
-          'violet-bright': '#A855F7',
-          'violet-dim': '#7C3AED',
-          'violet-deep': '#6D28D9',
-          'purple-glow': '#C084FC',
+          gold: '#E8A317',
+          'gold-bright': '#F5B731',
+          'gold-dim': '#CC7722',
+          'gold-deep': '#A85C1B',
+          'gold-glow': '#FFBF47',
           void: '#0C0A12',
           black: '#110E19',
           charcoal: '#1A1625',
@@ -44,8 +44,8 @@ const config: Config = {
         mono: ['Geist Mono', 'monospace'],
       },
       boxShadow: {
-        'glow-violet': '0 0 40px rgba(139, 92, 246, 0.2)',
-        'glow-violet-lg': '0 0 60px rgba(139, 92, 246, 0.3), 0 0 120px rgba(139, 92, 246, 0.1)',
+        'glow-gold': '0 0 40px rgba(232, 163, 23, 0.2)',
+        'glow-gold-lg': '0 0 60px rgba(232, 163, 23, 0.3), 0 0 120px rgba(232, 163, 23, 0.1)',
         'glow-cooperate': '0 0 40px rgba(16, 185, 129, 0.3)',
         'glow-defect': '0 0 40px rgba(239, 68, 68, 0.3)',
       },
@@ -86,8 +86,8 @@ const config: Config = {
           '75%, 100%': { transform: 'scale(2.5)', opacity: '0' },
         },
         'pulse-glow': {
-          '0%, 100%': { boxShadow: '0 0 20px rgba(139, 92, 246, 0.3)' },
-          '50%': { boxShadow: '0 0 40px rgba(139, 92, 246, 0.5)' },
+          '0%, 100%': { boxShadow: '0 0 20px rgba(232, 163, 23, 0.3)' },
+          '50%': { boxShadow: '0 0 40px rgba(232, 163, 23, 0.5)' },
         },
         'gradient-shift': {
           '0%, 100%': { backgroundPosition: '0% 50%' },
@@ -97,7 +97,7 @@ const config: Config = {
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
         'grid-pattern':
-          'linear-gradient(rgba(139, 92, 246, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(139, 92, 246, 0.04) 1px, transparent 1px)',
+          'linear-gradient(rgba(232, 163, 23, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(232, 163, 23, 0.04) 1px, transparent 1px)',
       },
       backgroundSize: {
         'grid': '48px 48px',

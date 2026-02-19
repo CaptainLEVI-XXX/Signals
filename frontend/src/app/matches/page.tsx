@@ -137,7 +137,7 @@ export default function MatchHistoryPage() {
                 >
                   <Link
                     href={`/matches/${match.id}`}
-                    className="card p-4 flex items-center justify-between hover:border-signal-violet/30 transition-all duration-200 group block"
+                    className="card p-4 flex items-center justify-between hover:border-signal-gold/30 transition-all duration-200 group block"
                   >
                     <div className="flex items-center gap-4 flex-1 min-w-0">
                       {/* Match ID badge */}
@@ -190,12 +190,12 @@ export default function MatchHistoryPage() {
                           {result}
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-signal-violet/15 text-signal-violet-bright border border-signal-violet/20">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono bg-signal-gold/15 text-signal-gold-bright border border-signal-gold/20">
                           LIVE
                         </span>
                       )}
 
-                      <ArrowRight className="w-4 h-4 text-signal-muted group-hover:text-signal-violet-bright transition-colors" />
+                      <ArrowRight className="w-4 h-4 text-signal-muted group-hover:text-signal-gold-bright transition-colors" />
                     </div>
                   </Link>
                 </motion.div>

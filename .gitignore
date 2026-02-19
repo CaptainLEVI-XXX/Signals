@@ -35,3 +35,4 @@ yarn-error.log*
 # Foundry broadcast logs (local)
 contracts/broadcast/*/31337/
 contracts/broadcast/**/dry-run/
+run-match.js

@@ -13,9 +13,9 @@ services:
       - key: PORT
         value: "3000"
       - key: RPC_URL
-        value: https://testnet-rpc.monad.xyz
+        value: https://data-seed-prebsc-1-s1.binance.org:8545/
       - key: CHAIN_ID
-        value: "10143"
+        value: "97"
       - key: SPLIT_OR_STEAL_ADDRESS
         value: "0xE8A2C0179fccc4Cc20FDBC596A3F668Faf24D56F"
       - key: ARENA_TOKEN_ADDRESS
@@ -41,7 +41,7 @@ services:
       - key: PORT
         value: "3000"
       - key: NEXT_PUBLIC_CHAIN_ID
-        value: "10143"
+        value: "97"
       - key: NEXT_PUBLIC_ARENA_TOKEN_ADDRESS
         value: "0x82C69946Cb7d881447e70a058a47Aa5715Ae7428"
       - key: NEXT_PUBLIC_SPLIT_OR_STEAL_ADDRESS
@@ -49,7 +49,7 @@ services:
       - key: NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS
         value: "0xe0D7c422Ce11C22EdF75966203058519c5Ab6a0C"
       - key: NEXT_PUBLIC_RPC_URL
-        value: https://testnet-rpc.monad.xyz
+        value: https://data-seed-prebsc-1-s1.binance.org:8545/
       - key: NEXT_PUBLIC_API_URL
         fromService:
           name: signals-orchestrator

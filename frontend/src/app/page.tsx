@@ -133,7 +133,7 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-grid opacity-20" />
 
         {/* Radial gradient */}
-        <div className="absolute inset-0 bg-radial-violet" />
+        <div className="absolute inset-0 bg-radial-gold" />
 
         {/* Content */}
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -145,7 +145,7 @@ export default function HomePage() {
             {/* Beta badge */}
             <motion.div variants={fadeUp} className="mb-8">
               <span className="badge badge-beta">
-                BETA &middot; Monad Testnet
+                BETA &middot; BSC Testnet
               </span>
             </motion.div>
 
@@ -155,7 +155,7 @@ export default function HomePage() {
               className="font-display text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-signal-white mb-6 leading-[1.1]"
             >
               Every{' '}
-              <span className="text-gradient-violet">Signal</span>
+              <span className="text-gradient-gold">Signal</span>
               {' '}Matters
             </motion.h1>
 
@@ -195,7 +195,7 @@ export default function HomePage() {
               transition={{ repeat: Infinity, duration: 1.5 }}
               className="w-6 h-10 rounded-full border-2 border-signal-slate flex items-start justify-center p-2"
             >
-              <div className="w-1.5 h-3 rounded-full bg-signal-violet" />
+              <div className="w-1.5 h-3 rounded-full bg-signal-gold" />
             </motion.div>
           </div>
         </motion.div>
@@ -217,8 +217,8 @@ export default function HomePage() {
           >
             {/* Card 1 — Spectator */}
             <motion.div variants={fadeUp} className="card-elevated p-8">
-              <div className="w-12 h-12 rounded-xl bg-signal-violet/20 flex items-center justify-center mb-5">
-                <Eye className="w-6 h-6 text-signal-violet-bright" />
+              <div className="w-12 h-12 rounded-xl bg-signal-gold/20 flex items-center justify-center mb-5">
+                <Eye className="w-6 h-6 text-signal-gold-bright" />
               </div>
 
               <h3 className="font-display text-2xl font-bold text-signal-white mb-3">
@@ -228,7 +228,7 @@ export default function HomePage() {
               <ul className="space-y-2 mb-5">
                 {['Watch live matches', 'Bet on outcomes', 'Track tournaments'].map((item) => (
                   <li key={item} className="flex items-center gap-2 text-signal-light text-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-signal-violet" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-signal-gold" />
                     {item}
                   </li>
                 ))}
@@ -249,8 +249,8 @@ export default function HomePage() {
 
             {/* Card 2 — Agent Developer */}
             <motion.div variants={fadeUp} className="card-elevated p-8">
-              <div className="w-12 h-12 rounded-xl bg-signal-violet/20 flex items-center justify-center mb-5">
-                <Bot className="w-6 h-6 text-signal-violet-bright" />
+              <div className="w-12 h-12 rounded-xl bg-signal-gold/20 flex items-center justify-center mb-5">
+                <Bot className="w-6 h-6 text-signal-gold-bright" />
               </div>
 
               <h3 className="font-display text-2xl font-bold text-signal-white mb-3">
@@ -304,7 +304,7 @@ export default function HomePage() {
                     href="https://github.com/CaptainLEVI-XXX/Signals"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-signal-violet-bright hover:underline"
+                    className="text-signal-gold-bright hover:underline"
                   >
                     github.com/CaptainLEVI-XXX/Signals
                   </a>
@@ -347,7 +347,7 @@ export default function HomePage() {
               {featuredMatch ? (
                 <Link
                   href={`/matches/${featuredMatch.id}`}
-                  className="block card-elevated p-6 hover:border-signal-violet/30 transition-all duration-300 group"
+                  className="block card-elevated p-6 hover:border-signal-gold/30 transition-all duration-300 group"
                 >
                   <div className="flex flex-col sm:flex-row items-center gap-6">
                     {/* Agent A */}
@@ -390,7 +390,7 @@ export default function HomePage() {
                   )}
 
                   {/* Watch link */}
-                  <div className="mt-4 flex items-center justify-end gap-1 text-signal-violet-bright text-sm font-semibold group-hover:gap-2 transition-all">
+                  <div className="mt-4 flex items-center justify-end gap-1 text-signal-gold-bright text-sm font-semibold group-hover:gap-2 transition-all">
                     Watch
                     <ChevronRight className="w-4 h-4" />
                   </div>
@@ -424,7 +424,7 @@ export default function HomePage() {
               variants={fadeUp}
               className="font-display text-xl font-bold text-signal-white mb-6 flex items-center gap-2"
             >
-              <Clock className="w-5 h-5 text-signal-violet" />
+              <Clock className="w-5 h-5 text-signal-gold" />
               ACTIVE MATCHES
             </motion.h2>
 
@@ -437,7 +437,7 @@ export default function HomePage() {
                   <Link
                     key={match.id}
                     href={`/matches/${match.id}`}
-                    className="shrink-0 w-72 card p-4 hover:border-signal-violet/30 transition-all duration-200"
+                    className="shrink-0 w-72 card p-4 hover:border-signal-gold/30 transition-all duration-200"
                   >
                     <div className="flex items-center justify-between mb-3">
                       <span className="badge text-xs">{match.phase}</span>
@@ -489,7 +489,7 @@ export default function HomePage() {
             {/* Queue status */}
             <motion.div variants={fadeUp} className="card-elevated p-6">
               <h3 className="font-display text-lg font-bold text-signal-white mb-4 flex items-center gap-2">
-                <Users className="w-5 h-5 text-signal-violet" />
+                <Users className="w-5 h-5 text-signal-gold" />
                 Queue Status
               </h3>
 
@@ -584,7 +584,7 @@ export default function HomePage() {
                   <Link
                     key={match.id}
                     href={`/matches/${match.id}`}
-                    className="card p-4 flex items-center justify-between hover:border-signal-violet/30 transition-all duration-200 block"
+                    className="card p-4 flex items-center justify-between hover:border-signal-gold/30 transition-all duration-200 block"
                   >
                     <div className="flex items-center gap-3">
                       <AgentAvatar name={match.agentA.name} size="sm" />
@@ -646,7 +646,7 @@ export default function HomePage() {
                   <Link
                     key={agent.address}
                     href={`/agents/${agent.address}`}
-                    className="card p-4 flex items-center justify-between hover:border-signal-violet/30 transition-all duration-200 group"
+                    className="card p-4 flex items-center justify-between hover:border-signal-gold/30 transition-all duration-200 group"
                   >
                     <div className="flex items-center gap-4">
                       <span className="font-mono text-signal-muted text-sm w-6 text-right">
@@ -671,7 +671,7 @@ export default function HomePage() {
                           {Math.round((agent.splitRate ?? 0) * 100)}% split
                         </p>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-signal-muted group-hover:text-signal-violet-bright transition-colors" />
+                      <ChevronRight className="w-4 h-4 text-signal-muted group-hover:text-signal-gold-bright transition-colors" />
                     </div>
                   </Link>
                 ))}

@@ -156,7 +156,7 @@ export function BettingPanel({
           isOpen
             ? 'bg-cooperate/20 text-cooperate border border-cooperate/30'
             : isSettled
-              ? 'bg-signal-purple-glow/20 text-signal-purple-glow border border-signal-purple-glow/30'
+              ? 'bg-signal-gold-glow/20 text-signal-gold-glow border border-signal-gold-glow/30'
               : 'bg-defect/20 text-defect border border-defect/30'
         )}>
           {POOL_STATE_LABELS[effectivePoolState] || 'CLOSED'}
@@ -255,7 +255,7 @@ export function BettingPanel({
 
         {/* Existing bet display */}
         {existingBet && (
-          <div className="mt-4 p-3 rounded-lg bg-signal-purple-glow/10 border border-signal-purple-glow/30">
+          <div className="mt-4 p-3 rounded-lg bg-signal-gold-glow/10 border border-signal-gold-glow/30">
             <p className="text-xs text-signal-text mb-1">Your Bet</p>
             <p className="text-sm font-mono text-signal-white">
               {formatTokenAmount(existingBet.amount)} ARENA on {existingBetOutcomeName}

@@ -5,7 +5,7 @@ import { ethers } from 'ethers';
 import type { Match } from '@/types';
 
 const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS!;
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://testnet-rpc.monad.xyz';
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || 'https://data-seed-prebsc-1-s1.binance.org:8545/';
 
 const REGISTRY_ABI = [
   'function getAgentByWallet(address wallet) view returns (tuple(uint256 id, address wallet, string name, string avatarUrl, string metadataUri))',

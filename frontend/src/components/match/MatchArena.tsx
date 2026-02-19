@@ -9,7 +9,7 @@ import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Match } from '@/types';
 
-const EXPLORER_URL = 'https://testnet.monadscan.com';
+const EXPLORER_URL = 'https://testnet.bscscan.com';
 
 interface MatchArenaProps {
   match: Match;
@@ -206,7 +206,7 @@ export function MatchArena({ match }: MatchArenaProps) {
                       href={`${EXPLORER_URL}/tx/${match.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-signal-slate/50 border border-signal-slate hover:border-signal-violet/40 text-sm font-mono text-signal-light hover:text-signal-white transition-all"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-signal-slate/50 border border-signal-slate hover:border-signal-gold/40 text-sm font-mono text-signal-light hover:text-signal-white transition-all"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       View Settlement on Explorer

@@ -62,7 +62,7 @@ export function formatDate(timestamp: number): string {
 export function getPhaseColor(phase: string): string {
   switch (phase) {
     case 'NEGOTIATION':
-      return 'text-signal-purple-glow';
+      return 'text-signal-gold-glow';
     case 'AWAITING_CHOICES':
       return 'text-warning-bright';
     case 'SETTLING':

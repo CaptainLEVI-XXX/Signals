@@ -115,10 +115,10 @@ export function FrequencyBarsCanvas({ variant = 'hero', className = '' }: Freque
         const y = h - barH;
 
         const grad = ctx.createLinearGradient(x, h, x, y);
-        grad.addColorStop(0, `rgba(139, 92, 246, ${config.opacity})`);
-        grad.addColorStop(0.4, `rgba(168, 85, 247, ${config.opacity * 0.9})`);
-        grad.addColorStop(0.8, `rgba(109, 40, 217, ${config.opacity * 0.7})`);
-        grad.addColorStop(1, `rgba(109, 40, 217, ${config.opacity * 0.4})`);
+        grad.addColorStop(0, `rgba(232, 163, 23, ${config.opacity})`);
+        grad.addColorStop(0.4, `rgba(245, 183, 49, ${config.opacity * 0.9})`);
+        grad.addColorStop(0.8, `rgba(168, 92, 27, ${config.opacity * 0.7})`);
+        grad.addColorStop(1, `rgba(168, 92, 27, ${config.opacity * 0.4})`);
 
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -137,8 +137,8 @@ export function FrequencyBarsCanvas({ variant = 'hero', className = '' }: Freque
             x + barWidth / 2, y, 0,
             x + barWidth / 2, y, barWidth * 2,
           );
-          glowGrad.addColorStop(0, `rgba(192, 132, 252, ${config.glowStrength * 0.35 * bar.currentHeight})`);
-          glowGrad.addColorStop(1, 'rgba(192, 132, 252, 0)');
+          glowGrad.addColorStop(0, `rgba(255, 191, 71, ${config.glowStrength * 0.35 * bar.currentHeight})`);
+          glowGrad.addColorStop(1, 'rgba(255, 191, 71, 0)');
 
           ctx.fillStyle = glowGrad;
           ctx.fillRect(x - barWidth, y - barWidth * 2, barWidth * 3, barWidth * 4);
@@ -188,7 +188,7 @@ export function SignalWaveBackground({
           baseFrequency: 0.015,
           speed: 0.03,
           opacity: 0.4,
-          colors: ['#8B5CF6', '#A855F7', '#C084FC', '#7C3AED', '#6D28D9'],
+          colors: ['#E8A317', '#F5B731', '#FFBF47', '#CC7722', '#A85C1B'],
         };
       case 'ambient':
         return {
@@ -197,7 +197,7 @@ export function SignalWaveBackground({
           baseFrequency: 0.008,
           speed: 0.015,
           opacity: 0.15,
-          colors: ['#8B5CF6', '#A855F7', '#7C3AED'],
+          colors: ['#E8A317', '#F5B731', '#CC7722'],
         };
       default:
         return {
@@ -206,7 +206,7 @@ export function SignalWaveBackground({
           baseFrequency: 0.012,
           speed: 0.02,
           opacity: 0.25,
-          colors: ['#8B5CF6', '#A855F7', '#C084FC', '#7C3AED'],
+          colors: ['#E8A317', '#F5B731', '#FFBF47', '#CC7722'],
         };
     }
   }, [variant]);
@@ -334,7 +334,7 @@ export function SignalWaveBackground({
 
 export function OscilloscopeDisplay({
   intensity = 0.5,
-  color = '#8B5CF6',
+  color = '#E8A317',
   className = '',
 }: {
   intensity?: number;
@@ -428,7 +428,7 @@ export function OscilloscopeDisplay({
 
 export function FrequencyBars({
   barCount = 32,
-  color = '#8B5CF6',
+  color = '#E8A317',
   className = '',
 }: {
   barCount?: number;

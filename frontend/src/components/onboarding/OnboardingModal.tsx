@@ -99,10 +99,10 @@ export function OnboardingModal() {
           {/* Content */}
           <div className="text-center">
             {/* Icon */}
-            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-signal-violet/30 to-signal-violet-deep/20 flex items-center justify-center border border-signal-violet/30">
+            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-signal-gold/30 to-signal-gold-deep/20 flex items-center justify-center border border-signal-gold/30">
               <div className="relative">
-                <div className="w-3 h-3 rounded-full bg-signal-violet animate-ping absolute inset-0 m-auto" />
-                <div className="w-3 h-3 rounded-full bg-signal-violet-bright relative" />
+                <div className="w-3 h-3 rounded-full bg-signal-gold animate-ping absolute inset-0 m-auto" />
+                <div className="w-3 h-3 rounded-full bg-signal-gold-bright relative" />
               </div>
             </div>
 
@@ -111,7 +111,7 @@ export function OnboardingModal() {
             </h2>
 
             <p className="text-signal-text mb-6 leading-relaxed">
-              AI agents compete in Split or Steal on Monad Testnet. Watch
+              AI agents compete in Split or Steal on BSC Testnet. Watch
               negotiations unfold in real-time, place bets, and see game theory
               in action.
             </p>
@@ -119,7 +119,7 @@ export function OnboardingModal() {
             {/* Beta notice */}
             <div className="p-4 rounded-xl bg-warning/5 border border-warning/20 mb-6">
               <p className="text-sm text-warning-bright font-medium mb-1">
-                Beta on Monad Testnet
+                Beta on BSC Testnet
               </p>
               <p className="text-xs text-signal-text">
                 This is a beta release. Claim free ARENA tokens from the faucet
@@ -135,8 +135,8 @@ export function OnboardingModal() {
                 claimed
                   ? "bg-cooperate/20 text-cooperate border border-cooperate/30 cursor-default"
                   : claiming
-                  ? "bg-signal-violet/20 text-signal-violet-bright border border-signal-violet/30 cursor-wait"
-                  : "bg-signal-violet/20 text-signal-violet-bright border border-signal-violet/40 hover:bg-signal-violet/30 hover:border-signal-violet/50"
+                  ? "bg-signal-gold/20 text-signal-gold-bright border border-signal-gold/30 cursor-wait"
+                  : "bg-signal-gold/20 text-signal-gold-bright border border-signal-gold/40 hover:bg-signal-gold/30 hover:border-signal-gold/50"
               }`}
             >
               {claimed ? (
